@@ -1,0 +1,21 @@
+{
+  "libVersion": "3.17.3",
+  "projectname": "minigame-1013",
+  "setting": {
+    "urlCheck": false,
+    "coverView": false,
+    "lazyloadPlaceholderEnable": false,
+    "skylineRenderEnable": false,
+    "preloadBackgroundData": false,
+    "autoAudits": false,
+    "showShadowRootInWxmlPanel": false,
+    "showES6CompileOption": false,
+    "compileHotReLoad": false,
+    "bigPackageSizeSupport": false,
+    "useApiHook": true,
+    "checkInvalidKey": true,
+    "useStaticServer": false,
+    "useLanDebug": false,
+    "ignoreDevUnusedFiles": true
+  }
+}
