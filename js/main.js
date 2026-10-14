@@ -1,134 +1,228 @@
-import './render'; // 初始化Canvas
-import Player from './player/index'; // 导入玩家类
-import Enemy from './npc/enemy'; // 导入敌机类
-import BackGround from './runtime/background'; // 导入背景类
-import GameInfo from './runtime/gameinfo'; // 导入游戏UI类
-import Music from './runtime/music'; // 导入音乐类
-import DataBus from './databus'; // 导入数据类，用于管理游戏状态和数据
+import './render.js';
+import Scene from './scene.js';
+import { SPECIES, STORAGE_KEY, hydrate, adopt, care, daily, miniReward,
+  ensureTasks, recordTask, claimTask } from './model.js';
 
-const ENEMY_GENERATE_INTERVAL = 30;
-const ctx = canvas.getContext('2d'); // 获取canvas的2D绘图上下文;
-
-GameGlobal.databus = new DataBus(); // 全局数据管理，用于管理游戏状态和数据
-GameGlobal.musicManager = new Music(); // 全局音乐管理实例
-
-/**
- * 游戏主函数
- */
 export default class Main {
-  aniId = 0; // 用于存储动画帧的ID
-  bg = new BackGround(); // 创建背景
-  player = new Player(); // 创建玩家
-  gameInfo = new GameInfo(); // 创建游戏UI显示
-
   constructor() {
-    // 当开始游戏被点击时，重新开始游戏
-    this.gameInfo.on('restart', this.start.bind(this));
-
-    // 开始游戏
-    this.start();
-  }
-
-  /**
-   * 开始或重启游戏
-   */
-  start() {
-    GameGlobal.databus.reset(); // 重置数据
-    this.player.init(); // 重置玩家状态
-    cancelAnimationFrame(this.aniId); // 清除上一局的动画
-    this.aniId = requestAnimationFrame(this.loop.bind(this)); // 开始新的动画循环
-  }
-
-  /**
-   * 随着帧数变化的敌机生成逻辑
-   * 帧数取模定义成生成的频率
-   */
-  enemyGenerate() {
-    // 每30帧生成一个敌机
-    if (GameGlobal.databus.frame % ENEMY_GENERATE_INTERVAL === 0) {
-      const enemy = GameGlobal.databus.pool.getItemByClass('enemy', Enemy); // 从对象池获取敌机实例
-      enemy.init(); // 初始化敌机
-      GameGlobal.databus.enemys.push(enemy); // 将敌机添加到敌机数组中
-    }
-  }
-
-  /**
-   * 全局碰撞检测
-   */
-  collisionDetection() {
-    // 检测子弹与敌机的碰撞
-    GameGlobal.databus.bullets.forEach((bullet) => {
-      for (let i = 0, il = GameGlobal.databus.enemys.length; i < il; i++) {
-        const enemy = GameGlobal.databus.enemys[i];
-
-        // 如果敌机存活并且发生了发生碰撞
-        if (enemy.isCollideWith(bullet)) {
-          enemy.destroy(); // 销毁敌机
-          bullet.destroy(); // 销毁子弹
-          GameGlobal.databus.score += 1; // 增加分数
-          break; // 退出循环
-        }
-      }
+    this.canvas = GameGlobal.canvas;
+    this.ctx = this.canvas.getContext('2d');
+    this.scene = new Scene(this.ctx, this.canvas);
+    this.state = this.load();
+    this.ui = { page: 'home', selected: 0, speech: '', toast: '', toastUntil: 0,
+      playing: false, paused: false, score: 0, remaining: 20, stars: [], basketX: 195,
+      gameResult: '', guideStep: this.state.guideStep, showSettings: false,
+      expression: 'normal', expressionUntil: 0, action: '', statDelta: '' };
+    this.lastFrame = Date.now();
+    this.lastSave = Date.now();
+    this.lastCareAt = 0;
+    this.sounds = {};
+    wx.onTouchStart(event => this.touch(event));
+    wx.onTouchMove(event => this.move(event));
+    if (wx.onHide) wx.onHide(() => {
+      if (this.ui.playing) this.ui.paused = true;
+      this.save();
     });
-
-    // 检测玩家与敌机的碰撞
-    for (let i = 0, il = GameGlobal.databus.enemys.length; i < il; i++) {
-      const enemy = GameGlobal.databus.enemys[i];
-
-      // 如果玩家与敌机发生碰撞
-      if (this.player.isCollideWith(enemy)) {
-        this.player.destroy(); // 销毁玩家飞机
-        GameGlobal.databus.gameOver(); // 游戏结束
-
-        break; // 退出循环
-      }
-    }
+    if (wx.onShow) wx.onShow(() => {
+      this.state = hydrate(this.state, Date.now());
+      ensureTasks(this.state);
+      this.lastFrame = Date.now();
+      this.save();
+    });
+    this.loop = this.loop.bind(this);
+    requestAnimationFrame(this.loop);
   }
 
-  /**
-   * canvas重绘函数
-   * 每一帧重新绘制所有的需要展示的元素
-   */
-  render() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height); // 清空画布
-
-    this.bg.render(ctx); // 绘制背景
-    this.player.render(ctx); // 绘制玩家飞机
-    GameGlobal.databus.bullets.forEach((item) => item.render(ctx)); // 绘制所有子弹
-    GameGlobal.databus.enemys.forEach((item) => item.render(ctx)); // 绘制所有敌机
-    this.gameInfo.render(ctx); // 绘制游戏UI
-    GameGlobal.databus.animations.forEach((ani) => {
-      if (ani.isPlaying) {
-        ani.aniRender(ctx); // 渲染动画
-      }
-    }); // 绘制所有动画
+  load() {
+    try { return hydrate(wx.getStorageSync(STORAGE_KEY), Date.now()); }
+    catch (e) { return hydrate(null, Date.now()); }
   }
 
-  // 游戏逻辑更新主函数
-  update() {
-    GameGlobal.databus.frame++; // 增加帧数
+  save() {
+    this.state.lastSeen = Date.now();
+    try { wx.setStorageSync(STORAGE_KEY, this.state); }
+    catch (e) { this.notice('本机存档暂时不可用'); }
+  }
 
-    if (GameGlobal.databus.isGameOver) {
+  notice(message) {
+    this.ui.toast = message;
+    this.ui.toastUntil = Date.now() + 2200;
+  }
+
+  playSound(name) {
+    if (!this.state.soundEnabled || !wx.createInnerAudioContext) return;
+    try {
+      const existing = !!this.sounds[name];
+      if (!this.sounds[name]) {
+        const audio = wx.createInnerAudioContext();
+        audio.src = `audio/${name}.wav`;
+        audio.volume = .3;
+        this.sounds[name] = audio;
+      }
+      if (existing) this.sounds[name].stop();
+      this.sounds[name].play();
+    } catch (error) { /* Audio is optional; gameplay must continue. */ }
+  }
+
+  coords(event) {
+    const p = event.touches && event.touches[0] || event.changedTouches && event.changedTouches[0];
+    if (!p) return null;
+    return { x: (p.clientX - this.scene.offsetX) / this.scene.scale,
+      y: (p.clientY - this.scene.offsetY) / this.scene.scale };
+  }
+
+  touch(event) {
+    const p = this.coords(event);
+    if (!p) return;
+    const id = this.scene.hit(p.x, p.y);
+    if (this.ui.showSettings) {
+      if (id === 'sound_toggle') {
+        this.state.soundEnabled = !this.state.soundEnabled;
+        this.save();
+      } else if (id === 'settings_close') this.ui.showSettings = false;
       return;
     }
-
-    this.bg.update(); // 更新背景
-    this.player.update(); // 更新玩家
-    // 更新所有子弹
-    GameGlobal.databus.bullets.forEach((item) => item.update());
-    // 更新所有敌机
-    GameGlobal.databus.enemys.forEach((item) => item.update());
-
-    this.enemyGenerate(); // 生成敌机
-    this.collisionDetection(); // 检测碰撞
+    if (this.state.active && this.ui.guideStep > 0) {
+      if (id === 'guide_skip') this.ui.guideStep = 0;
+      else if (id === 'guide_next') this.ui.guideStep = this.ui.guideStep >= 3 ? 0 : this.ui.guideStep + 1;
+      else return;
+      this.state.guideStep = this.ui.guideStep;
+      this.save();
+      return;
+    }
+    if (id === 'settings') {
+      if (this.ui.playing) this.ui.paused = true;
+      this.ui.showSettings = true;
+      return;
+    }
+    if (id === 'pause_game' && this.ui.playing) { this.ui.paused = true; return; }
+    if (id === 'resume_game' && this.ui.playing) { this.ui.paused = false; this.lastFrame = Date.now(); return; }
+    if (id === 'quit_game' && this.ui.playing) {
+      this.ui.playing = false; this.ui.paused = false; this.ui.gameResult = '本局已结束，随时再来接星星';
+      return;
+    }
+    if (this.ui.playing && this.ui.page === 'game' && !this.ui.paused && !id) {
+      this.ui.basketX = Math.max(83, Math.min(307, p.x));
+      return;
+    }
+    if (!id) return;
+    if (id.startsWith('nav_')) {
+      if (this.ui.playing && id !== 'nav_game') this.ui.paused = true;
+      this.ui.page = id.slice(4);
+      return;
+    }
+    if (id.startsWith('pick_')) { this.ui.selected = Number(id.slice(5)); return; }
+    if (id === 'adopt_selected' || id.startsWith('adopt_')) {
+      const speciesId = id === 'adopt_selected' ? SPECIES[this.ui.selected].id : id.slice(6);
+      if (adopt(this.state, speciesId)) {
+        this.ui.page = 'home'; this.ui.speech = '终于见到你啦！';
+        this.notice('欢迎新伙伴加入小屋 ♡'); this.playSound('adopt'); this.save();
+      } else this.notice('爪爪币不够啦，玩游戏可以赚取');
+      return;
+    }
+    if (id.startsWith('select_')) {
+      this.state.active = id.slice(7);
+      this.ui.page = 'home'; this.ui.speech = '';
+      this.save(); return;
+    }
+    if (id === 'daily') {
+      if (daily(this.state)) { this.notice('领取成功：+30 爪爪币'); this.save(); }
+      return;
+    }
+    if (id.startsWith('claim_')) {
+      const result = claimTask(this.state, id.slice(6));
+      this.notice(result && result.reward ? `任务完成：+${result.reward} 爪爪币` : '先完成任务再来领取吧');
+      if (result && result.reward) { this.playSound('care'); this.save(); }
+      return;
+    }
+    if (id === 'start_game') { this.startGame(); return; }
+    if (id === 'pet_tap') {
+      this.ui.speech = ['好喜欢你呀 ♡', '再摸摸我的头~', '今天也要开心哦！'][Math.floor(Math.random() * 3)];
+      this.ui.expression = 'happy'; this.ui.expressionUntil = Date.now() + 1100;
+      recordTask(this.state, 'interact'); this.playSound('care'); this.save();
+      return;
+    }
+    if (['feed', 'wash', 'play', 'rest'].includes(id)) {
+      const now = Date.now();
+      if (now - this.lastCareAt < 350) return;
+      const pet = this.state.pets[this.state.active];
+      const before = pet && { hunger: pet.hunger, clean: pet.clean, happy: pet.happy, energy: pet.energy };
+      const result = care(this.state, id);
+      if (result) {
+        this.notice(result.error || result.label);
+        if (!result.error) {
+          this.lastCareAt = now;
+          this.ui.speech = result.label;
+          this.ui.expression = id === 'rest' ? 'sleepy' : 'happy';
+          this.ui.expressionUntil = now + 1100;
+          this.ui.action = id;
+          const stat = { feed: 'hunger', wash: 'clean', play: 'happy', rest: 'energy' }[id];
+          this.ui.statDelta = `+${Math.round(pet[stat] - before[stat])} ${ { hunger: '饱腹', clean: '清洁', happy: '快乐', energy: '精力' }[stat] }`;
+          recordTask(this.state, 'care'); this.playSound(result.leveled ? 'level' : 'care'); this.save();
+        }
+      }
+    }
   }
 
-  // 实现游戏帧循环
-  loop() {
-    this.update(); // 更新游戏逻辑
-    this.render(); // 渲染游戏画面
+  move(event) {
+    if (!this.ui.playing || this.ui.paused || this.ui.page !== 'game') return;
+    const p = this.coords(event);
+    if (p) this.ui.basketX = Math.max(83, Math.min(307, p.x));
+  }
 
-    // 请求下一帧动画
-    this.aniId = requestAnimationFrame(this.loop.bind(this));
+  startGame() {
+    this.ui.playing = true;
+    this.ui.paused = false;
+    this.ui.score = 0;
+    this.ui.remaining = 20;
+    this.ui.spawnTimer = 0;
+    this.ui.stars = [];
+    this.ui.basketX = 195;
+    this.ui.gameResult = '';
+  }
+
+  updateGame(dt) {
+    const ui = this.ui;
+    if (!ui.playing || ui.paused || ui.page !== 'game') return;
+    ui.remaining -= dt;
+    ui.spawnTimer -= dt;
+    const fieldBottom = this.scene.h - 320 + 160;
+    if (ui.spawnTimer <= 0) {
+      ui.spawnTimer = .48;
+      ui.stars.push({ x: 66 + Math.random() * 258, y: 187, speed: 195 + Math.random() * 70 });
+    }
+    ui.stars.forEach(star => { star.y += star.speed * dt; });
+    const priorScore = ui.score;
+    ui.stars = ui.stars.filter(star => {
+      if (star.y >= fieldBottom - 53 && star.y <= fieldBottom - 19 && Math.abs(star.x - ui.basketX) < 52) {
+        ui.score++; return false;
+      }
+      return star.y < fieldBottom;
+    });
+    if (ui.score > priorScore) { ui.expressionUntil = Date.now() + 400; this.playSound('catch'); }
+    if (ui.remaining <= 0) {
+      ui.playing = false;
+      ui.remaining = 0;
+      const reward = miniReward(this.state, ui.score);
+      recordTask(this.state, 'game');
+      if (reward.leveled) this.playSound('level');
+      ui.gameResult = `接到 ${ui.score} 颗星星 · 获得 ${reward.coins} 爪爪币`;
+      this.notice(reward.leveled ? `萌宠升级啦！额外获得 ${reward.bonus} 爪爪币` : '萌宠玩得好开心！');
+      this.save();
+    }
+  }
+
+  loop() {
+    const now = Date.now();
+    const dt = Math.min(.05, Math.max(0, (now - this.lastFrame) / 1000));
+    this.lastFrame = now;
+    if (this.ui.expressionUntil && now > this.ui.expressionUntil) {
+      this.ui.expression = 'normal'; this.ui.expressionUntil = 0; this.ui.action = ''; this.ui.statDelta = '';
+    }
+    if (this.state.tasks && this.state.tasks.date !== undefined) ensureTasks(this.state, now);
+    this.updateGame(dt);
+    this.scene.draw(this.state, this.ui);
+    if (now - this.lastSave > 30000) { this.lastSave = now; this.save(); }
+    requestAnimationFrame(this.loop);
   }
 }
