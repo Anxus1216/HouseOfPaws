@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>厚线水粉萌宠 · 状态总览</title>
+  <style>
+    :root { font-family: system-ui, "Microsoft YaHei", sans-serif; color: #49342c; background: #fff8f0; }
+    body { max-width: 1150px; margin: 0 auto; padding: 24px; }
+    h1 { margin: 0 0 8px; }
+    h2 { margin: 30px 0 12px; }
+    p { line-height: 1.5; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+    article { padding: 12px; border: 1px solid #ecd7c7; border-radius: 16px; background: white; }
+    h3 { margin: 0 0 10px; font-size: 16px; }
+    .stage { height: 215px; border-radius: 12px; display: grid; place-items: center; background: #f4e8d8; }
+    .stage img { width: 200px; height: 200px; object-fit: contain; }
+    .small { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 5px 8px; border-radius: 10px; background: #eaf2ea; font-size: 12px; }
+    .small img { width: 72px; height: 72px; object-fit: contain; flex: none; }
+  </style>
+</head>
+<body>
+  <h1>厚线水粉 · 三只萌宠状态总览</h1>
+  <p>奶糖原版、糯米 B、团团 C。每张展示约 200px 主场景效果及 72px 卡片效果；图像均为透明 PNG。游戏加载的是由这些原图生成的 320px 运行素材。</p>
+  <main id="pets"></main>
+  <script>
+    const pets = [['cat', '奶糖'], ['rabbit', '糯米 · B'], ['dog', '团团 · C']];
+    const states = [['normal', '基础'], ['happy', '开心'], ['sleepy', '困倦'], ['need', '需要照料'], ['feed', '喂食'], ['wash', '清洗'], ['play', '玩耍'], ['rest', '休息']];
+    document.querySelector('#pets').innerHTML = pets.map(([id, name]) => `
+      <section><h2>${name}</h2><div class="grid">${states.map(([state, label]) => {
+        const src = `pet_${id}_${state}.png`;
+        return `<article><h3>${label} · ${state}</h3><div class="stage"><img src="${src}" alt="${name}${label}"></div><div class="small"><img src="${src}" alt=""><span>卡片尺寸预览</span></div></article>`;
+      }).join('')}</div></section>`).join('');
+  </script>
+</body>
+</html>

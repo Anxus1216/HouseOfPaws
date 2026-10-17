@@ -48,7 +48,15 @@
   },
   "simulatorPluginLibVersion": {},
   "packOptions": {
-    "ignore": [],
+    "ignore": [
+      { "type": "folder", "value": "assets/pets/concepts" },
+      { "type": "folder", "value": "assets/pets/selected" },
+      { "type": "folder", "value": "assets/pets/style-explorations" },
+      { "type": "folder", "value": "docs" },
+      { "type": "folder", "value": "scripts" },
+      { "type": "folder", "value": "tests" },
+      { "type": "file", "value": "assets/pets/README.md" }
+    ],
     "include": []
   },
   "isGameTourist": false,

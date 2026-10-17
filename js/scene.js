@@ -25,6 +25,7 @@ export default class Scene {
     this.offsetY = 0;
     this.buttons = [];
     this.time = 0;
+    this.petImages = new Map();
   }
 
   resize() {
@@ -148,7 +149,41 @@ export default class Scene {
     }
   }
 
+  petSprite(id, x, y, size, t, expression, action) {
+    const state = ['feed', 'wash', 'play', 'rest'].includes(action) ? action :
+      ['normal', 'happy', 'sleepy', 'need'].includes(expression) ? expression : 'normal';
+    const key = `${id}_${state}`;
+    let entry = this.petImages.get(key);
+    if (!entry) {
+      const createImage = this.canvas.createImage ? () => this.canvas.createImage() :
+        typeof wx !== 'undefined' && wx.createImage ? () => wx.createImage() : null;
+      if (!createImage) return false;
+      try {
+        const image = createImage();
+        entry = { image, ready: false, failed: false };
+        this.petImages.set(key, entry);
+        image.onload = () => { entry.ready = true; };
+        image.onerror = () => { entry.failed = true; };
+        image.src = `assets/pets/sprites/pet_${key}.png`;
+      } catch (error) {
+        this.petImages.delete(key);
+        return false;
+      }
+    }
+    if (!entry.ready || entry.failed) return false;
+    const bob = expression === 'sleepy' ? Math.sin(t * 1.2) * 1.8 : Math.sin(t * 2) * 3;
+    const side = 300 * size;
+    try {
+      this.ctx.drawImage(entry.image, x - side / 2, y - 170 * size + bob, side, side);
+    } catch (error) {
+      entry.failed = true;
+      return false;
+    }
+    return true;
+  }
+
   pet(id, x, y, size = 1, t = 0, expression = 'normal', action = '') {
+    if (this.petSprite(id, x, y, size, t, expression, action)) return;
     const spec = SPECIES.find(s => s.id === id) || SPECIES[0];
     const c = this.ctx;
     const bob = expression === 'sleepy' ? Math.sin(t * 1.2) * 1.8 : Math.sin(t * 2) * 3;

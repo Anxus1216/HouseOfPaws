@@ -123,6 +123,36 @@ test('main actions stay reachable on a shorter portrait screen', async () => {
   }
 });
 
+test('generated pet sprites load by character and state', async () => {
+  const { default: Scene } = await import('../js/scene.js');
+  const requested = [];
+  const drawn = [];
+  const images = [];
+  globalThis.wx = { createImage: () => {
+    const image = { width: 512, height: 512,
+      set src(value) { requested.push(value); } };
+    images.push(image);
+    return image;
+  } };
+  const context = new Proxy({ drawImage: image => drawn.push(image) },
+    { get(target, key) { return target[key] || (() => {}); } });
+  const scene = new Scene(context, { width: 390, height: 844 });
+  scene.pet('rabbit', 195, 300, 1, 0, 'happy');
+  scene.pet('dog', 195, 300, 1, 0, 'happy', 'wash');
+  assert.deepEqual(requested, [
+    'assets/pets/sprites/pet_rabbit_happy.png',
+    'assets/pets/sprites/pet_dog_wash.png',
+  ]);
+  assert.equal(drawn.length, 0, 'Canvas art is used while sprites load');
+  images.forEach(image => image.onload());
+  scene.pet('rabbit', 195, 300, 1, 0, 'happy');
+  scene.pet('dog', 195, 300, 1, 0, 'happy', 'wash');
+  assert.equal(drawn.length, 2);
+  scene.pet('rabbit', 195, 300, 1, 0, 'happy');
+  assert.equal(requested.length, 2, 'loaded sprites are cached');
+  assert.equal(drawn.length, 3);
+});
+
 test('pet expression, action and bubble switch together when feedback ends', async () => {
   const { petDisplay, ACTION_SPEECH, FEEDBACK_MS } = await import('../js/pet-display.js');
   const pet = { hunger: 10, clean: 80, happy: 80, energy: 75 };
