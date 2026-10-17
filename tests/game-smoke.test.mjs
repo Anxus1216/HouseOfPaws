@@ -38,7 +38,9 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   tapId('guide_skip');
   assert.equal(saved.paw_house_save_v1.guideStep, 0);
   tapId('feed');
-  assert.equal(saved.paw_house_save_v1.pets.cat.hunger, 100);
+  assert.ok(saved.paw_house_save_v1.pets.cat.hunger > 99.99);
+  assert.ok(game.ui.expressionUntil - Date.now() > 2000);
+  assert.equal(game.ui.speech, '吃饱啦！');
   assert.equal(game.state.tasks.progress.care, 1);
   tapId('pet_tap');
   assert.equal(game.state.tasks.progress.interact, 1);
@@ -75,6 +77,30 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   handlers.show();
   assert.equal(game.ui.paused, true);
   assert.equal(saved.paw_house_save_v1.active, 'cat');
+
+  game.ui.page = 'game';
+  game.startGame();
+  game.ui.spawnTimer = 100;
+  game.ui.stars = [{ x: 195, y: game.scene.h - 320 + 160 - 60, speed: 250 }];
+  game.updateGame(2);
+  assert.equal(game.ui.remaining, 18, 'a dropped frame counts its real elapsed time');
+  assert.equal(game.ui.score, 1, 'a star crossing the basket is caught');
+  game.ui.paused = true;
+  game.updateGame(10);
+  assert.equal(game.ui.remaining, 18, 'paused time is excluded');
+  game.ui.paused = false;
+  game.updateGame(18);
+  assert.equal(game.ui.remaining, 0);
+  assert.equal(game.ui.playing, false);
+  const coinsAfterPayout = game.state.coins;
+  game.updateGame(20);
+  assert.equal(game.state.coins, coinsAfterPayout, 'the round pays out only once');
+
+  game.state.pets.cat.hunger = 80;
+  game.state.lastSeen = Date.now() - 3600000;
+  game.save();
+  assert.ok(saved.paw_house_save_v1.pets.cat.hunger < 79,
+    'saving settles foreground time before advancing lastSeen');
 });
 
 test('main actions stay reachable on a shorter portrait screen', async () => {
@@ -95,4 +121,48 @@ test('main actions stay reachable on a shorter portrait screen', async () => {
       assert.ok(button.y >= 0 && button.y + button.h <= scene.h, `${page}:${button.id} fits height`);
     }
   }
+});
+
+test('pet expression, action and bubble switch together when feedback ends', async () => {
+  const { petDisplay, ACTION_SPEECH, FEEDBACK_MS } = await import('../js/pet-display.js');
+  const pet = { hunger: 10, clean: 80, happy: 80, energy: 75 };
+  const ui = { expression: 'sleepy', action: 'rest', speech: ACTION_SPEECH.rest,
+    statDelta: '+27 精力', expressionUntil: 1000 + FEEDBACK_MS.rest };
+  assert.deepEqual(petDisplay(pet, ui, 2000), {
+    expression: 'sleepy', action: 'rest', speech: '休息中，补充精力～', statDelta: '+27 精力',
+  });
+  assert.deepEqual(petDisplay(pet, ui, 4000), {
+    expression: 'need', action: '', speech: '肚子饿啦，想吃点东西', statDelta: '',
+  });
+  pet.hunger = 80;
+  pet.energy = 27;
+  assert.equal(petDisplay(pet, ui, 4000).expression, 'sleepy');
+  assert.equal(petDisplay(pet, ui, 4000).speech, '有点困啦');
+  pet.energy = 75;
+  assert.equal(petDisplay(pet, ui, 4000).speech, '');
+});
+
+test('home renders matching care sprite and speech before and after expiry', async () => {
+  const { default: Scene } = await import('../js/scene.js');
+  const { initialState, adopt } = await import('../js/model.js');
+  const context = new Proxy({}, { get: () => () => {} });
+  const scene = new Scene(context, { width: 390, height: 844 });
+  const state = initialState();
+  adopt(state, 'cat');
+  state.pets.cat.hunger = 10;
+  const ui = { expression: 'sleepy', action: 'rest', speech: '休息中，补充精力～',
+    statDelta: '+27 精力', expressionUntil: Date.now() + 3000 };
+  const text = [];
+  let pose;
+  scene.text = value => text.push(value);
+  scene.pet = (id, x, y, size, time, expression, action) => { pose = { expression, action }; };
+  scene.home(state, ui);
+  assert.deepEqual(pose, { expression: 'sleepy', action: 'rest' });
+  assert.ok(text.includes('休息中，补充精力～'));
+  ui.expressionUntil = Date.now() - 1;
+  text.length = 0;
+  scene.home(state, ui);
+  assert.deepEqual(pose, { expression: 'need', action: '' });
+  assert.ok(text.includes('肚子饿啦，想吃点东西'));
+  assert.ok(!text.includes('休息中，补充精力～'));
 });

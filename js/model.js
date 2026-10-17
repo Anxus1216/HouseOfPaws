@@ -1,3 +1,5 @@
+import { CARE_ACTIONS } from './care-actions.js';
+
 export const SPECIES = [
   { id: 'cat', name: '奶糖', type: '奶油小猫', color: '#F5CDA5', accent: '#D78B78', cost: 0, line: '一只喜欢晒太阳的小猫' },
   { id: 'rabbit', name: '糯米', type: '垂耳小兔', color: '#E8D9C9', accent: '#D9A7B0', cost: 80, line: '软乎乎的云朵收藏家' },
@@ -82,15 +84,21 @@ export function hydrate(raw, now = Date.now()) {
       state.tasks.claimed[task.id] = claimed;
     });
   }
-  const elapsedHours = clamp((now - state.lastSeen) / 3600000, 0, 24);
+  settleTime(state, now);
+  return state;
+}
+
+export function settleTime(state, now = Date.now()) {
+  if (!Number.isFinite(now) || now <= state.lastSeen) return 0;
+  const elapsedHours = Math.min((now - state.lastSeen) / 3600000, 24);
   Object.values(state.pets).forEach(pet => {
-    pet.hunger = clamp(pet.hunger - elapsedHours * 1.25, 15, 100);
-    pet.clean = clamp(pet.clean - elapsedHours * 0.8, 15, 100);
-    pet.happy = clamp(pet.happy - elapsedHours * 0.65, 15, 100);
-    pet.energy = clamp(pet.energy + elapsedHours * 1.7, 15, 100);
+    pet.hunger = Math.max(Math.min(pet.hunger, 15), pet.hunger - elapsedHours * 1.25);
+    pet.clean = Math.max(Math.min(pet.clean, 15), pet.clean - elapsedHours * 0.8);
+    pet.happy = Math.max(Math.min(pet.happy, 15), pet.happy - elapsedHours * 0.65);
+    pet.energy = clamp(pet.energy + elapsedHours * 1.7, 0, 100);
   });
   state.lastSeen = now;
-  return state;
+  return elapsedHours;
 }
 
 export function adopt(state, id) {
@@ -118,17 +126,15 @@ export function addXp(pet, amount) {
 export function care(state, action) {
   const pet = state.pets[state.active];
   if (!pet) return null;
-  const effects = {
-    feed: { hunger: 25, happy: 3, cost: 5, xp: 10, label: '吃饱啦！' },
-    wash: { clean: 29, happy: 4, cost: 0, xp: 10, label: '香喷喷！' },
-    play: { happy: 22, energy: -14, hunger: -7, cost: 0, xp: 12, label: '玩得好开心！' },
-    rest: { energy: 27, hunger: -5, cost: 0, xp: 8, label: '精神满满！' },
-  };
-  const effect = effects[action];
-  if (!effect || state.coins < effect.cost) return { error: '爪爪币不够啦' };
-  if (action === 'play' && pet.energy < 15) return { error: '先让宝贝休息一下吧' };
+  const effect = CARE_ACTIONS[action];
+  if (!effect) return { error: '无法执行该照料' };
+  if (pet[effect.target] >= 100) return { error: effect.fullMessage };
+  if (state.coins < effect.cost) return { error: '爪爪币不够啦' };
+  if (action === 'play' && pet.energy + effect.changes.energy < 15) {
+    return { error: '先让宝贝休息一下吧' };
+  }
   state.coins -= effect.cost;
-  STATS.forEach(key => { if (effect[key]) pet[key] = clamp(pet[key] + effect[key], 0, 100); });
+  STATS.forEach(key => { if (effect.changes[key]) pet[key] = clamp(pet[key] + effect.changes[key], 0, 100); });
   pet.actions++;
   state.totalActions++;
   const leveled = addXp(pet, effect.xp);

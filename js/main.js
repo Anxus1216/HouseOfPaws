@@ -1,7 +1,9 @@
 import './render.js';
 import Scene from './scene.js';
+import { CARE_ACTIONS } from './care-actions.js';
+import { ACTION_SPEECH, FEEDBACK_MS } from './pet-display.js';
 import { SPECIES, STORAGE_KEY, hydrate, adopt, care, daily, miniReward,
-  ensureTasks, recordTask, claimTask } from './model.js';
+  ensureTasks, recordTask, claimTask, settleTime } from './model.js';
 
 export default class Main {
   constructor() {
@@ -24,7 +26,7 @@ export default class Main {
       this.save();
     });
     if (wx.onShow) wx.onShow(() => {
-      this.state = hydrate(this.state, Date.now());
+      settleTime(this.state, Date.now());
       ensureTasks(this.state);
       this.lastFrame = Date.now();
       this.save();
@@ -39,7 +41,7 @@ export default class Main {
   }
 
   save() {
-    this.state.lastSeen = Date.now();
+    settleTime(this.state, Date.now());
     try { wx.setStorageSync(STORAGE_KEY, this.state); }
     catch (e) { this.notice('本机存档暂时不可用'); }
   }
@@ -74,6 +76,7 @@ export default class Main {
   touch(event) {
     const p = this.coords(event);
     if (!p) return;
+    settleTime(this.state, Date.now());
     const id = this.scene.hit(p.x, p.y);
     if (this.ui.showSettings) {
       if (id === 'sound_toggle') {
@@ -116,13 +119,16 @@ export default class Main {
       const speciesId = id === 'adopt_selected' ? SPECIES[this.ui.selected].id : id.slice(6);
       if (adopt(this.state, speciesId)) {
         this.ui.page = 'home'; this.ui.speech = '终于见到你啦！';
+        this.ui.expression = 'happy'; this.ui.expressionUntil = Date.now() + FEEDBACK_MS.tap;
+        this.ui.action = ''; this.ui.statDelta = '';
         this.notice('欢迎新伙伴加入小屋 ♡'); this.playSound('adopt'); this.save();
       } else this.notice('爪爪币不够啦，玩游戏可以赚取');
       return;
     }
     if (id.startsWith('select_')) {
       this.state.active = id.slice(7);
-      this.ui.page = 'home'; this.ui.speech = '';
+      this.ui.page = 'home'; this.ui.speech = ''; this.ui.expressionUntil = 0;
+      this.ui.action = ''; this.ui.statDelta = '';
       this.save(); return;
     }
     if (id === 'daily') {
@@ -138,7 +144,8 @@ export default class Main {
     if (id === 'start_game') { this.startGame(); return; }
     if (id === 'pet_tap') {
       this.ui.speech = ['好喜欢你呀 ♡', '再摸摸我的头~', '今天也要开心哦！'][Math.floor(Math.random() * 3)];
-      this.ui.expression = 'happy'; this.ui.expressionUntil = Date.now() + 1100;
+      this.ui.expression = 'happy'; this.ui.expressionUntil = Date.now() + FEEDBACK_MS.tap;
+      this.ui.action = ''; this.ui.statDelta = '';
       recordTask(this.state, 'interact'); this.playSound('care'); this.save();
       return;
     }
@@ -152,11 +159,11 @@ export default class Main {
         this.notice(result.error || result.label);
         if (!result.error) {
           this.lastCareAt = now;
-          this.ui.speech = result.label;
-          this.ui.expression = id === 'rest' ? 'sleepy' : 'happy';
-          this.ui.expressionUntil = now + 1100;
+          this.ui.speech = ACTION_SPEECH[id];
+          this.ui.expression = CARE_ACTIONS[id].expression;
+          this.ui.expressionUntil = now + FEEDBACK_MS[id];
           this.ui.action = id;
-          const stat = { feed: 'hunger', wash: 'clean', play: 'happy', rest: 'energy' }[id];
+          const stat = CARE_ACTIONS[id].target;
           this.ui.statDelta = `+${Math.round(pet[stat] - before[stat])} ${ { hunger: '饱腹', clean: '清洁', happy: '快乐', energy: '精力' }[stat] }`;
           recordTask(this.state, 'care'); this.playSound(result.leveled ? 'level' : 'care'); this.save();
         }
@@ -171,6 +178,7 @@ export default class Main {
   }
 
   startGame() {
+    this.lastFrame = Date.now();
     this.ui.playing = true;
     this.ui.paused = false;
     this.ui.score = 0;
@@ -183,23 +191,31 @@ export default class Main {
 
   updateGame(dt) {
     const ui = this.ui;
-    if (!ui.playing || ui.paused || ui.page !== 'game') return;
-    ui.remaining -= dt;
-    ui.spawnTimer -= dt;
+    if (!ui.playing || ui.paused || ui.page !== 'game' || !Number.isFinite(dt) || dt <= 0) return;
+    const elapsed = Math.min(dt, ui.remaining);
+    ui.remaining = Math.max(0, ui.remaining - dt);
     const fieldBottom = this.scene.h - 320 + 160;
-    if (ui.spawnTimer <= 0) {
-      ui.spawnTimer = .48;
-      ui.stars.push({ x: 66 + Math.random() * 258, y: 187, speed: 195 + Math.random() * 70 });
-    }
-    ui.stars.forEach(star => { star.y += star.speed * dt; });
     const priorScore = ui.score;
-    ui.stars = ui.stars.filter(star => {
-      if (star.y >= fieldBottom - 53 && star.y <= fieldBottom - 19 && Math.abs(star.x - ui.basketX) < 52) {
-        ui.score++; return false;
+    let simulated = 0;
+    while (simulated < elapsed) {
+      const step = Math.min(.05, elapsed - simulated);
+      ui.spawnTimer -= step;
+      if (ui.spawnTimer <= 0) {
+        ui.spawnTimer += .48;
+        ui.stars.push({ x: 66 + Math.random() * 258, y: 187, speed: 195 + Math.random() * 70 });
       }
-      return star.y < fieldBottom;
-    });
-    if (ui.score > priorScore) { ui.expressionUntil = Date.now() + 400; this.playSound('catch'); }
+      ui.stars = ui.stars.filter(star => {
+        const previousY = star.y;
+        star.y += star.speed * step;
+        if (previousY <= fieldBottom - 19 && star.y >= fieldBottom - 53 &&
+            Math.abs(star.x - ui.basketX) < 52) {
+          ui.score++; return false;
+        }
+        return star.y < fieldBottom;
+      });
+      simulated += step;
+    }
+    if (ui.score > priorScore) this.playSound('catch');
     if (ui.remaining <= 0) {
       ui.playing = false;
       ui.remaining = 0;
@@ -214,10 +230,12 @@ export default class Main {
 
   loop() {
     const now = Date.now();
-    const dt = Math.min(.05, Math.max(0, (now - this.lastFrame) / 1000));
+    const dt = Math.max(0, (now - this.lastFrame) / 1000);
     this.lastFrame = now;
-    if (this.ui.expressionUntil && now > this.ui.expressionUntil) {
-      this.ui.expression = 'normal'; this.ui.expressionUntil = 0; this.ui.action = ''; this.ui.statDelta = '';
+    settleTime(this.state, now);
+    if (this.ui.expressionUntil && now >= this.ui.expressionUntil) {
+      this.ui.expression = 'normal'; this.ui.expressionUntil = 0;
+      this.ui.action = ''; this.ui.speech = ''; this.ui.statDelta = '';
     }
     if (this.state.tasks && this.state.tasks.date !== undefined) ensureTasks(this.state, now);
     this.updateGame(dt);

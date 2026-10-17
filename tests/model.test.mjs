@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { initialState, hydrate, adopt, care, daily, miniReward,
-  STORAGE_KEY, SAVE_VERSION, TASKS, dayKey, ensureTasks, recordTask, claimTask } from '../js/model.js';
+  STORAGE_KEY, SAVE_VERSION, TASKS, dayKey, ensureTasks, recordTask, claimTask,
+  settleTime } from '../js/model.js';
 
 test('free adoption, care, switching and persistence', () => {
   const state = initialState(1000);
@@ -19,6 +20,49 @@ test('free adoption, care, switching and persistence', () => {
   assert.equal(loaded.pets.cat.hunger, 100);
 });
 
+test('care at a full target stat cannot grant XP, coins or task progress', () => {
+  for (const [action, target] of Object.entries({
+    feed: 'hunger', wash: 'clean', play: 'happy', rest: 'energy',
+  })) {
+    const state = initialState(1000);
+    adopt(state, 'cat');
+    const pet = state.pets.cat;
+    pet[target] = 100;
+    pet.level = 1;
+    pet.xp = 39;
+    const before = JSON.stringify(state);
+    const result = care(state, action);
+    assert.ok(result.error, `${action} should be rejected`);
+    assert.equal(JSON.stringify(state), before, `${action} should not mutate state`);
+    assert.equal(state.tasks.progress.care, 0);
+  }
+});
+
+test('care near a full target stat still grants the normal reward', () => {
+  const state = initialState(1000);
+  adopt(state, 'cat');
+  state.pets.cat.hunger = 99;
+  const result = care(state, 'feed');
+  assert.equal(result.error, undefined);
+  assert.equal(state.pets.cat.hunger, 100);
+  assert.equal(state.pets.cat.xp, 10);
+  assert.equal(state.pets.cat.actions, 1);
+  assert.equal(state.totalActions, 1);
+  assert.equal(state.coins, 55);
+});
+
+test('play requires enough energy to stay above the care threshold', () => {
+  const state = initialState(1000);
+  adopt(state, 'cat');
+  state.pets.cat.energy = 28;
+  const before = JSON.stringify(state);
+  assert.ok(care(state, 'play').error);
+  assert.equal(JSON.stringify(state), before);
+  state.pets.cat.energy = 29;
+  assert.equal(care(state, 'play').error, undefined);
+  assert.equal(state.pets.cat.energy, 15);
+});
+
 test('offline decay is capped and damaged saves are repaired', () => {
   const state = initialState(1000);
   adopt(state, 'cat');
@@ -26,8 +70,38 @@ test('offline decay is capped and damaged saves are repaired', () => {
   state.pets.cat.clean = 5;
   const loaded = hydrate(state, 1000 + 72 * 3600000);
   assert.equal(loaded.pets.cat.hunger, 60);
-  assert.equal(loaded.pets.cat.clean, 15);
+  assert.equal(loaded.pets.cat.clean, 5);
   assert.equal(hydrate({ pets: { cat: { hunger: 'broken' } }, active: 'missing' }, 1000).active, 'cat');
+});
+
+test('foreground and offline settlement share one clock and never double count', () => {
+  const hour = 3600000;
+  const state = initialState(1000);
+  adopt(state, 'cat');
+  state.pets.cat.hunger = 90;
+  assert.equal(settleTime(state, 1000 + hour), 1);
+  assert.equal(state.pets.cat.hunger, 88.75);
+  assert.equal(settleTime(state, 1000 + hour), 0);
+  assert.equal(state.pets.cat.hunger, 88.75);
+  const loaded = hydrate(JSON.parse(JSON.stringify(state)), 1000 + 2 * hour);
+  assert.equal(loaded.pets.cat.hunger, 87.5);
+  assert.equal(loaded.lastSeen, 1000 + 2 * hour);
+  assert.equal(settleTime(loaded, 1000 + hour), 0, 'clock rollback must not replay time');
+  assert.equal(loaded.lastSeen, 1000 + 2 * hour);
+});
+
+test('time decay does not raise a stat that an action drove below the floor', () => {
+  const state = initialState(1000);
+  adopt(state, 'cat');
+  state.pets.cat.hunger = 5;
+  state.pets.cat.clean = 10;
+  state.pets.cat.happy = 12;
+  state.pets.cat.energy = 5;
+  settleTime(state, 1000 + 24 * 3600000);
+  assert.equal(state.pets.cat.hunger, 5);
+  assert.equal(state.pets.cat.clean, 10);
+  assert.equal(state.pets.cat.happy, 12);
+  assert.ok(state.pets.cat.energy > 5);
 });
 
 test('daily is once per local day and mini game rewards are bounded', () => {

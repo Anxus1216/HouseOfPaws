@@ -1,4 +1,5 @@
 import { SPECIES, TASKS, canDaily } from './model.js';
+import { petDisplay } from './pet-display.js';
 
 const C = {
   ink: '#554139', muted: '#8D766B', paper: '#FFFDF9', cream: '#FFF7EF',
@@ -250,18 +251,17 @@ export default class Scene {
     this.box(287, roomY + 61, 34, 8, 3, '#B98E76');
     this.ellipse(195, roomY + roomH - 14, 96, 14, C.shadow);
     const petSize = clamp(roomH / 345, .54, .88);
-    const expression = ui.expressionUntil > Date.now() ? ui.expression :
-      Math.min(pet.hunger, pet.clean, pet.happy, pet.energy) < 25 ? 'need' : pet.energy < 29 ? 'sleepy' : 'normal';
+    const display = petDisplay(pet, ui);
     this.pet(pet.id, 195, roomY + roomH - petSize * 107 - 10, petSize, this.time,
-      expression, ui.expressionUntil > Date.now() ? ui.action : '');
+      display.expression, display.action);
     this.buttons.push({ id: 'pet_tap', x: 94, y: roomY + 5, w: 204, h: roomH - 12 });
-    if (ui.speech) {
+    if (display.speech) {
       this.box(181, roomY + 12, 157, 32, 16, C.paper);
-      this.text(ui.speech.slice(0, 13), 259, roomY + 29, 11, C.brown, 'center');
+      this.text(display.speech.slice(0, 13), 259, roomY + 29, 11, C.brown, 'center');
     }
-    if (ui.statDelta && ui.expressionUntil > Date.now()) {
+    if (display.statDelta) {
       this.box(118, roomY + roomH - 44, 154, 27, 13, '#FFF9EE');
-      this.text(ui.statDelta, 195, roomY + roomH - 30, 12, C.coral, 'center', 'bold');
+      this.text(display.statDelta, 195, roomY + roomH - 30, 12, C.coral, 'center', 'bold');
     }
     const cardY = roomY + roomH + 12;
     this.text('LV.' + pet.level + '  ' + pet.name, 39, cardY + 4, 15, C.ink, 'left', 'bold');
