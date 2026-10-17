@@ -51,6 +51,21 @@ test('care near a full target stat still grants the normal reward', () => {
   assert.equal(state.coins, 55);
 });
 
+test('a stat displayed as 100% cannot be farmed through fractional decay', () => {
+  const state = initialState();
+  adopt(state, 'cat');
+  const pet = state.pets.cat;
+  pet.happy = 99.9999;
+  const before = JSON.stringify(state);
+  assert.equal(care(state, 'play').error, '已经玩得很开心啦');
+  assert.equal(JSON.stringify(state), before);
+  pet.happy = 99.4;
+  const result = care(state, 'play');
+  assert.equal(result.error, undefined);
+  assert.equal(pet.xp, 12);
+  assert.equal(pet.happy, 100);
+});
+
 test('play requires enough energy to stay above the care threshold', () => {
   const state = initialState(1000);
   adopt(state, 'cat');

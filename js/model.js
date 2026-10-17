@@ -128,7 +128,7 @@ export function care(state, action) {
   if (!pet) return null;
   const effect = CARE_ACTIONS[action];
   if (!effect) return { error: '无法执行该照料' };
-  if (pet[effect.target] >= 100) return { error: effect.fullMessage };
+  if (Math.round(pet[effect.target]) >= 100) return { error: effect.fullMessage };
   if (state.coins < effect.cost) return { error: '爪爪币不够啦' };
   if (action === 'play' && pet.energy + effect.changes.energy < 15) {
     return { error: '先让宝贝休息一下吧' };
