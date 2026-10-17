@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { initialState, hydrate, adopt, care, daily, miniReward,
   STORAGE_KEY, SAVE_VERSION, TASKS, dayKey, ensureTasks, recordTask, claimTask,
-  settleTime } from '../js/model.js';
+  settleTime, getDailyGrowth, MAX_DAILY_GROWTH } from '../js/model.js';
 
 test('free adoption, care, switching and persistence', () => {
   const state = initialState(1000);
@@ -64,6 +64,52 @@ test('a stat displayed as 100% cannot be farmed through fractional decay', () =>
   assert.equal(result.error, undefined);
   assert.equal(pet.xp, 12);
   assert.equal(pet.happy, 100);
+});
+
+test('each pet has a 100-point daily growth cap, including partial final awards', () => {
+  const now = new Date(2026, 9, 17, 10).getTime();
+  const state = initialState(now);
+  state.coins = 200;
+  adopt(state, 'cat', now);
+  adopt(state, 'rabbit', now);
+  state.active = 'cat';
+  const cat = state.pets.cat;
+  cat.dailyGrowth.earned = 96;
+  const play = care(state, 'play', now);
+  assert.equal(play.xp, 4);
+  assert.equal(cat.xp, 4);
+  assert.equal(getDailyGrowth(cat, now), MAX_DAILY_GROWTH);
+  cat.xp = 39;
+  const cleanBefore = cat.clean;
+  const wash = care(state, 'wash', now);
+  assert.equal(wash.xp, 0);
+  assert.equal(wash.leveled, false);
+  assert.equal(cat.xp, 39);
+  assert.ok(cat.clean > cleanBefore, 'care remains useful after growth reaches its cap');
+  assert.equal(cat.actions, 2);
+  state.active = 'rabbit';
+  assert.equal(care(state, 'rest', now).xp, 8);
+  assert.equal(getDailyGrowth(state.pets.rabbit, now), 8);
+  assert.equal(getDailyGrowth(cat, now), 100);
+});
+
+test('mini-game growth shares the pet cap and resets on the next local day', () => {
+  const today = new Date(2026, 9, 17, 10).getTime();
+  const tomorrow = new Date(2026, 9, 18, 10).getTime();
+  const state = initialState(today);
+  adopt(state, 'cat', today);
+  const pet = state.pets.cat;
+  pet.dailyGrowth.earned = 90;
+  assert.equal(miniReward(state, 100, today).xp, 10);
+  assert.equal(miniReward(state, 100, today).xp, 0);
+  assert.equal(getDailyGrowth(pet, today), 100);
+  assert.equal(care(state, 'wash', tomorrow).xp, 10);
+  assert.equal(pet.dailyGrowth.date, dayKey(tomorrow));
+  assert.equal(getDailyGrowth(pet, tomorrow), 10);
+  assert.equal(care(state, 'rest', today).xp, 8,
+    'clock rollback must not reset the newer daily growth counter');
+  assert.equal(pet.dailyGrowth.date, dayKey(tomorrow));
+  assert.equal(getDailyGrowth(pet, today), 18);
 });
 
 test('play requires enough energy to stay above the care threshold', () => {
@@ -148,6 +194,7 @@ test('v1 save migrates without losing pets, currency or daily gift status', () =
   assert.equal(state.pets.cat.level, 4);
   assert.equal(state.pets.cat.xp, 19);
   assert.equal(state.pets.cat.actions, 7);
+  assert.equal(getDailyGrowth(state.pets.cat, now), 0);
   assert.equal(state.totalActions, 9);
   assert.equal(daily(state, now), false);
   assert.equal(state.guideStep, 0);
@@ -242,9 +289,46 @@ test('full wallet cannot claim an unrecoverable partial reward', () => {
 test('invalid mini-game score cannot corrupt currency or pet stats', () => {
   const state = initialState();
   adopt(state, 'cat');
-  assert.deepEqual(miniReward(state, NaN), { coins: 0, leveled: false });
+  assert.deepEqual(miniReward(state, NaN), { coins: 0, leveled: false, xp: 0 });
   assert.equal(state.coins, 60);
   assert.equal(state.pets.cat.happy, 72);
+});
+
+test('daily growth survives saves and damaged counters are repaired', () => {
+  const now = new Date(2026, 9, 17, 10).getTime();
+  const state = initialState(now);
+  adopt(state, 'cat', now);
+  state.pets.cat.dailyGrowth.earned = 72;
+  assert.equal(getDailyGrowth(hydrate(state, now).pets.cat, now), 72);
+  const legacy = structuredClone(state);
+  legacy.version = 2;
+  delete legacy.pets.cat.dailyGrowth;
+  assert.equal(getDailyGrowth(hydrate(legacy, now).pets.cat, now), 0);
+  state.pets.cat.dailyGrowth.earned = Infinity;
+  assert.equal(getDailyGrowth(hydrate(state, now).pets.cat, now), 0);
+  state.pets.cat.dailyGrowth.earned = 999;
+  assert.equal(getDailyGrowth(hydrate(state, now).pets.cat, now), 100);
+  state.pets.cat.dailyGrowth.date = 'invalid';
+  assert.equal(getDailyGrowth(hydrate(state, now).pets.cat, now), 0);
+  state.pets.cat.dailyGrowth = { date: dayKey(now), earned: 50 };
+  assert.equal(getDailyGrowth(hydrate(state, now + 86400000).pets.cat, now + 86400000), 0);
+});
+
+test('the last level only counts growth that the pet can actually use', () => {
+  const now = new Date(2026, 9, 17, 10).getTime();
+  const state = initialState(now);
+  adopt(state, 'cat', now);
+  const pet = state.pets.cat;
+  pet.level = 98;
+  pet.xp = 98 * 40 - 5;
+  const result = care(state, 'wash', now);
+  assert.equal(result.xp, 5);
+  assert.equal(result.leveled, true);
+  assert.equal(pet.level, 99);
+  assert.equal(pet.xp, 0);
+  assert.equal(getDailyGrowth(pet, now), 5);
+  assert.equal(care(state, 'rest', now).xp, 0);
+  assert.equal(getDailyGrowth(pet, now), 5);
 });
 
 test('mini-game and level rewards respect the wallet cap', () => {
@@ -256,6 +340,8 @@ test('mini-game and level rewards respect the wallet cap', () => {
   assert.equal(state.coins, 999999);
   state.pets.cat.level = 99;
   state.pets.cat.xp = 3900;
-  care(state, 'wash');
+  const careResult = care(state, 'wash');
+  assert.equal(careResult.xp, 0);
   assert.equal(state.pets.cat.xp, 0);
+  assert.equal(getDailyGrowth(state.pets.cat), reward.xp);
 });

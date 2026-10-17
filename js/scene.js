@@ -1,4 +1,4 @@
-import { SPECIES, TASKS, canDaily } from './model.js';
+import { SPECIES, TASKS, canDaily, getDailyGrowth, MAX_DAILY_GROWTH } from './model.js';
 import { petDisplay } from './pet-display.js';
 
 const C = {
@@ -273,8 +273,10 @@ export default class Scene {
     const pet = state.pets[state.active];
     this.header(state, '早安，' + pet.name + ' ♡', '今天也一起度过温柔的一天吧');
     const actionsY = this.h - 195;
-    const roomY = 150, roomH = Math.max(170, actionsY - roomY - 157);
     const cardBottom = actionsY - 30;
+    const roomY = 150;
+    // Reserve space below the room for the daily growth label and both stat rows.
+    const roomH = Math.max(162, cardBottom - roomY - 143);
     this.box(20, 132, 350, cardBottom - 132, 25, C.paper, C.line);
     this.box(35, roomY, 320, roomH, 20, '#F9E9DB');
     this.box(35, roomY + roomH * .69, 320, roomH * .31, 0, '#EDD1B7');
@@ -295,8 +297,14 @@ export default class Scene {
       this.text(display.speech.slice(0, 13), 259, roomY + 29, 11, C.brown, 'center');
     }
     if (display.statDelta) {
-      this.box(118, roomY + roomH - 44, 154, 27, 13, '#FFF9EE');
-      this.text(display.statDelta, 195, roomY + roomH - 30, 12, C.coral, 'center', 'bold');
+      const lines = display.statDelta.split('|');
+      const twoLines = lines.length > 1;
+      this.box(43, roomY + roomH - (twoLines ? 59 : 44), 304,
+        twoLines ? 43 : 27, 13, '#FFF9EE');
+      this.text(lines[0], 195, roomY + roomH - (twoLines ? 45 : 30),
+        twoLines ? 10 : 12, C.coral, 'center', 'bold');
+      if (twoLines) this.text(lines[1], 195, roomY + roomH - 26,
+        11, C.brown, 'center', 'bold');
     }
     const cardY = roomY + roomH + 12;
     this.text('LV.' + pet.level + '  ' + pet.name, 39, cardY + 4, 15, C.ink, 'left', 'bold');
@@ -304,7 +312,10 @@ export default class Scene {
     this.text(pet.level >= 99 ? '已满级' : `成长 ${pet.xp}/${needed}`, 336, cardY + 4, 11, C.muted, 'right');
     this.box(39, cardY + 20, 312, 6, 3, '#F0E7E0');
     this.box(39, cardY + 20, 312 * clamp(pet.xp / needed, 0, 1), 6, 3, C.pink);
-    this.stats(pet, cardY + 45);
+    const todayGrowth = getDailyGrowth(pet);
+    this.text(`今日成长 ${todayGrowth}/${MAX_DAILY_GROWTH}`, 39, cardY + 40, 11,
+      todayGrowth >= MAX_DAILY_GROWTH ? C.coral : C.muted);
+    this.stats(pet, cardY + 59);
     this.text('陪伴时光', 22, actionsY - 17, 16, C.ink, 'left', 'bold');
     [['feed', '◉', '喂食'], ['wash', '◌', '清洁'], ['play', '✿', '玩耍'], ['rest', '☾', '休息']].forEach((a, i) => {
       const x = 20 + i * 91;
@@ -419,6 +430,8 @@ export default class Scene {
       if (ui.gameResult) {
         this.text('本局完成！', 195, fieldY + fieldH * .55, 21, C.ink, 'center', 'bold');
         this.text(ui.gameResult, 195, fieldY + fieldH * .64, 12, C.brown, 'center');
+        if (ui.gameGrowth) this.text(ui.gameGrowth, 195, fieldY + fieldH * .70,
+          11, C.coral, 'center', 'bold');
       } else {
         this.text('左右滑动篮子，接住小星星', 195, fieldY + fieldH * .60, 15, C.brown, 'center');
         this.text('每局 20 秒 · 接得越多奖励越多', 195, fieldY + fieldH * .69, 11, C.muted, 'center');

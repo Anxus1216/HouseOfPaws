@@ -7,7 +7,8 @@ export const SPECIES = [
 ];
 
 export const STORAGE_KEY = 'paw_house_save_v1';
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
+export const MAX_DAILY_GROWTH = 100;
 export const TASKS = [
   { id: 'care', label: '照料萌宠 1 次', target: 1, reward: 10 },
   { id: 'interact', label: '和萌宠互动 1 次', target: 1, reward: 10 },
@@ -41,9 +42,10 @@ function freshTasks(now) {
     claimed: { care: false, interact: false, game: false } };
 }
 
-export function makePet(id) {
+export function makePet(id, now = Date.now()) {
   return { id, name: SPECIES.find(s => s.id === id).name, hunger: 76, clean: 82,
-    happy: 72, energy: 78, level: 1, xp: 0, actions: 0 };
+    happy: 72, energy: 78, level: 1, xp: 0, actions: 0,
+    dailyGrowth: { date: dayKey(now), earned: 0 } };
 }
 
 export function initialState(now = Date.now()) {
@@ -62,12 +64,17 @@ export function hydrate(raw, now = Date.now()) {
   SPECIES.forEach(species => {
     const source = raw.pets && raw.pets[species.id];
     if (!source || typeof source !== 'object' || Array.isArray(source)) return;
-    const pet = makePet(species.id);
+    const pet = makePet(species.id, now);
     STATS.forEach(key => { pet[key] = validNumber(source[key], pet[key], 0, 100); });
     pet.level = validInteger(source.level, 1, 1, 99);
     pet.xp = validInteger(source.xp, 0, 0, 9999);
     pet.actions = validInteger(source.actions, 0, 0, 999999);
     pet.name = typeof source.name === 'string' && source.name.trim() ? source.name.slice(0, 8) : pet.name;
+    if (source.dailyGrowth && typeof source.dailyGrowth === 'object' &&
+        dateOrder(source.dailyGrowth.date) >= dateOrder(dayKey(now))) {
+      pet.dailyGrowth = { date: source.dailyGrowth.date,
+        earned: validInteger(source.dailyGrowth.earned, 0, 0, MAX_DAILY_GROWTH) };
+    }
     state.pets[species.id] = pet;
   });
   state.active = state.pets[raw.active] ? raw.active : Object.keys(state.pets)[0] || null;
@@ -101,11 +108,11 @@ export function settleTime(state, now = Date.now()) {
   return elapsedHours;
 }
 
-export function adopt(state, id) {
+export function adopt(state, id, now = Date.now()) {
   const species = SPECIES.find(item => item.id === id);
   if (!species || state.pets[id] || state.coins < species.cost) return false;
   state.coins -= species.cost;
-  state.pets[id] = makePet(id);
+  state.pets[id] = makePet(id, now);
   state.active = id;
   return true;
 }
@@ -123,7 +130,28 @@ export function addXp(pet, amount) {
   return leveled;
 }
 
-export function care(state, action) {
+export function getDailyGrowth(pet, now = Date.now()) {
+  if (!pet || !pet.dailyGrowth ||
+      dateOrder(pet.dailyGrowth.date) < dateOrder(dayKey(now))) return 0;
+  return validInteger(pet.dailyGrowth.earned, 0, 0, MAX_DAILY_GROWTH);
+}
+
+function awardGrowth(pet, amount, now) {
+  const key = dayKey(now);
+  if (!pet.dailyGrowth || dateOrder(pet.dailyGrowth.date) < dateOrder(key)) {
+    pet.dailyGrowth = { date: key, earned: 0 };
+  }
+  if (pet.level >= 99) { addXp(pet, 0); return { xp: 0, leveled: false }; }
+  let untilMaxLevel = -pet.xp;
+  for (let level = pet.level; level < 99; level++) untilMaxLevel += level * 40;
+  const xp = Math.max(0, Math.min(amount,
+    MAX_DAILY_GROWTH - getDailyGrowth(pet, now), untilMaxLevel));
+  const leveled = xp > 0 && addXp(pet, xp);
+  pet.dailyGrowth.earned += xp;
+  return { xp, leveled };
+}
+
+export function care(state, action, now = Date.now()) {
   const pet = state.pets[state.active];
   if (!pet) return null;
   const effect = CARE_ACTIONS[action];
@@ -137,10 +165,11 @@ export function care(state, action) {
   STATS.forEach(key => { if (effect.changes[key]) pet[key] = clamp(pet[key] + effect.changes[key], 0, 100); });
   pet.actions++;
   state.totalActions++;
-  const leveled = addXp(pet, effect.xp);
+  const { xp, leveled } = awardGrowth(pet, effect.xp, now);
   const bonus = leveled ? Math.min(15, MAX_COINS - state.coins) : 0;
   state.coins += bonus;
-  return { label: leveled ? `升级啦！获得 ${bonus} 爪爪币` : effect.label, leveled };
+  return { label: leveled ? `升级啦！获得 ${bonus} 爪爪币` : effect.label,
+    leveled, xp };
 }
 
 export function dayKey(now = Date.now()) {
@@ -187,15 +216,15 @@ export function daily(state, now = Date.now()) {
   return true;
 }
 
-export function miniReward(state, score) {
+export function miniReward(state, score, now = Date.now()) {
   const pet = state.pets[state.active];
   if (!pet) return null;
   score = validInteger(score, 0, 0, 999999);
   const coins = Math.min(30, Math.max(0, score) * 3, MAX_COINS - state.coins);
   state.coins += coins;
   pet.happy = clamp(pet.happy + Math.min(20, score * 3), 0, 100);
-  const leveled = addXp(pet, Math.min(25, score * 3));
+  const { xp, leveled } = awardGrowth(pet, Math.min(25, score * 3), now);
   const bonus = leveled ? Math.min(15, MAX_COINS - state.coins) : 0;
   state.coins += bonus;
-  return leveled ? { coins, leveled, bonus } : { coins, leveled };
+  return leveled ? { coins, leveled, bonus, xp } : { coins, leveled, xp };
 }

@@ -39,9 +39,18 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   assert.equal(saved.paw_house_save_v1.guideStep, 0);
   tapId('feed');
   assert.ok(saved.paw_house_save_v1.pets.cat.hunger > 99.99);
+  assert.match(game.ui.statDelta, /饱腹 \+24 · 快乐 \+3/);
+  assert.match(game.ui.statDelta, /成长 \+10 · 爪爪币 -5/);
   assert.ok(game.ui.expressionUntil - Date.now() > 2000);
   assert.equal(game.ui.speech, '吃饱啦！');
   assert.equal(game.state.tasks.progress.care, 1);
+  game.state.pets.cat.dailyGrowth.earned = 96;
+  game.lastCareAt = 0;
+  tapId('play');
+  assert.match(game.ui.statDelta, /成长 \+4（今日已满）/);
+  game.lastCareAt = 0;
+  tapId('wash');
+  assert.match(game.ui.statDelta, /成长 \+0（今日已满）/);
   tapId('pet_tap');
   assert.equal(game.state.tasks.progress.interact, 1);
   tapId('nav_tasks');
@@ -70,6 +79,7 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   assert.equal(played.length, playedBeforeMute);
   assert.equal(game.ui.playing, false);
   assert.match(game.ui.gameResult, /接到/);
+  assert.match(game.ui.gameGrowth, /成长 \+\d+/);
   assert.equal(game.state.tasks.progress.game, 1);
   tapId('start_game');
   handlers.hide();
@@ -92,6 +102,7 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   game.updateGame(18);
   assert.equal(game.ui.remaining, 0);
   assert.equal(game.ui.playing, false);
+  assert.equal(game.ui.gameGrowth, '成长 +0（今日已满）');
   const coinsAfterPayout = game.state.coins;
   game.updateGame(20);
   assert.equal(game.state.coins, coinsAfterPayout, 'the round pays out only once');
@@ -120,6 +131,30 @@ test('main actions stay reachable on a shorter portrait screen', async () => {
       assert.ok(button.x >= 0 && button.x + button.w <= 390, `${page}:${button.id} fits width`);
       assert.ok(button.y >= 0 && button.y + button.h <= scene.h, `${page}:${button.id} fits height`);
     }
+  }
+});
+
+test('growth and status bars stay inside the home card on short and tall screens', async () => {
+  const { default: Scene } = await import('../js/scene.js');
+  const { initialState, adopt } = await import('../js/model.js');
+  const context = new Proxy({}, { get(target, key) { return target[key] || (() => {}); } });
+  const state = initialState();
+  adopt(state, 'cat');
+  const ui = { page: 'home', speech: '', expressionUntil: 0, action: '', statDelta: '' };
+  for (const height of [680, 844]) {
+    const scene = new Scene(context, { width: 390, height });
+    const boxes = [], labels = [];
+    scene.box = (x, y, w, h, r, fill) => boxes.push({ x, y, w, h, fill });
+    scene.text = (value, x, y) => labels.push({ value, x, y });
+    scene.draw(state, ui);
+    const card = boxes.find(box => box.x === 20 && box.y === 132 && box.w === 350);
+    const statusBars = boxes.filter(box => (box.x === 39 || box.x === 202) &&
+      box.w === 125 && box.h === 7 && box.fill === '#F0E8E2');
+    const title = labels.find(label => label.value === '陪伴时光');
+    assert.ok(card && title && statusBars.length === 4);
+    const statusBottom = Math.max(...statusBars.map(box => box.y + box.h));
+    assert.ok(statusBottom <= card.y + card.h - 8, `${height}px: bars fit within card`);
+    assert.ok(title.y - statusBottom >= 12, `${height}px: title clears the bars`);
   }
 });
 
@@ -189,6 +224,11 @@ test('home renders matching care sprite and speech before and after expiry', asy
   scene.home(state, ui);
   assert.deepEqual(pose, { expression: 'sleepy', action: 'rest' });
   assert.ok(text.includes('休息中，补充精力～'));
+  assert.ok(text.includes('今日成长 0/100'));
+  state.pets.cat.dailyGrowth.earned = 100;
+  text.length = 0;
+  scene.home(state, ui);
+  assert.ok(text.includes('今日成长 100/100'));
   ui.expressionUntil = Date.now() - 1;
   text.length = 0;
   scene.home(state, ui);

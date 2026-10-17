@@ -3,7 +3,16 @@ import Scene from './scene.js';
 import { CARE_ACTIONS } from './care-actions.js';
 import { ACTION_SPEECH, FEEDBACK_MS } from './pet-display.js';
 import { SPECIES, STORAGE_KEY, hydrate, adopt, care, daily, miniReward,
-  ensureTasks, recordTask, claimTask, settleTime } from './model.js';
+  ensureTasks, recordTask, claimTask, settleTime, getDailyGrowth,
+  MAX_DAILY_GROWTH } from './model.js';
+
+const STAT_LABELS = { hunger: '饱腹', clean: '清洁', happy: '快乐', energy: '精力' };
+
+function growthFeedback(pet, earned, base, now) {
+  const reason = earned < base && pet.level >= 99 ? '（已满级）' :
+    earned < base && getDailyGrowth(pet, now) >= MAX_DAILY_GROWTH ? '（今日已满）' : '';
+  return `成长 +${earned}${reason}`;
+}
 
 export default class Main {
   constructor() {
@@ -13,7 +22,7 @@ export default class Main {
     this.state = this.load();
     this.ui = { page: 'home', selected: 0, speech: '', toast: '', toastUntil: 0,
       playing: false, paused: false, score: 0, remaining: 20, stars: [], basketX: 195,
-      gameResult: '', guideStep: this.state.guideStep, showSettings: false,
+      gameResult: '', gameGrowth: '', guideStep: this.state.guideStep, showSettings: false,
       expression: 'normal', expressionUntil: 0, action: '', statDelta: '' };
     this.lastFrame = Date.now();
     this.lastSave = Date.now();
@@ -154,7 +163,7 @@ export default class Main {
       if (now - this.lastCareAt < 350) return;
       const pet = this.state.pets[this.state.active];
       const before = pet && { hunger: pet.hunger, clean: pet.clean, happy: pet.happy, energy: pet.energy };
-      const result = care(this.state, id);
+      const result = care(this.state, id, now);
       if (result) {
         this.notice(result.error || result.label);
         if (!result.error) {
@@ -163,8 +172,13 @@ export default class Main {
           this.ui.expression = CARE_ACTIONS[id].expression;
           this.ui.expressionUntil = now + FEEDBACK_MS[id];
           this.ui.action = id;
-          const stat = CARE_ACTIONS[id].target;
-          this.ui.statDelta = `+${Math.round(pet[stat] - before[stat])} ${ { hunger: '饱腹', clean: '清洁', happy: '快乐', energy: '精力' }[stat] }`;
+          const effect = CARE_ACTIONS[id];
+          const changes = Object.keys(effect.changes).map(stat => {
+            const change = Math.round(pet[stat]) - Math.round(before[stat]);
+            return change ? `${STAT_LABELS[stat]} ${change > 0 ? '+' : ''}${change}` : '';
+          }).filter(Boolean);
+          const cost = effect.cost ? ` · 爪爪币 -${effect.cost}` : '';
+          this.ui.statDelta = `${changes.join(' · ')}|${growthFeedback(pet, result.xp, effect.xp, now)}${cost}`;
           recordTask(this.state, 'care'); this.playSound(result.leveled ? 'level' : 'care'); this.save();
         }
       }
@@ -187,6 +201,7 @@ export default class Main {
     this.ui.stars = [];
     this.ui.basketX = 195;
     this.ui.gameResult = '';
+    this.ui.gameGrowth = '';
   }
 
   updateGame(dt) {
@@ -219,10 +234,13 @@ export default class Main {
     if (ui.remaining <= 0) {
       ui.playing = false;
       ui.remaining = 0;
-      const reward = miniReward(this.state, ui.score);
+      const now = Date.now();
+      const reward = miniReward(this.state, ui.score, now);
       recordTask(this.state, 'game');
       if (reward.leveled) this.playSound('level');
       ui.gameResult = `接到 ${ui.score} 颗星星 · 获得 ${reward.coins} 爪爪币`;
+      const pet = this.state.pets[this.state.active];
+      ui.gameGrowth = growthFeedback(pet, reward.xp, Math.min(25, ui.score * 3), now);
       this.notice(reward.leveled ? `萌宠升级啦！额外获得 ${reward.bonus} 爪爪币` : '萌宠玩得好开心！');
       this.save();
     }
