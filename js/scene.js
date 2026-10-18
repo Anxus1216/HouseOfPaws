@@ -625,11 +625,11 @@ export default class Scene {
     this.box(31, y, 328, height, 24, C.paper);
     this.text('小屋设置', 58, y + 45, 21, C.ink, 'left', 'bold');
     this.button('settings_close', 304, y + 22, 33, 33, '×', '#F8EEE8', C.brown, null, 20);
-    this.box(51, y + 78, 288, 65, 15, '#FFF7F0');
-    this.text('音效', 68, y + 105, 15, C.ink, 'left', 'bold');
-    this.text(state.soundEnabled ? '已开启' : '已关闭', 242, y + 105, 12, C.muted, 'right');
-    this.button('sound_toggle', 260, y + 91, 65, 34, state.soundEnabled ? '关闭' : '开启',
-      state.soundEnabled ? C.mint : C.coral, '#FFF', null, 11);
+    this.text('音效', 58, y + 110, 15, C.ink, 'left', 'bold');
+    this.box(281, y + 94, 53, 31, 16, state.soundEnabled ? '#A97958' : '#DED0BE');
+    this.circle(state.soundEnabled ? 318.5 : 296.5, y + 109.5, 12.5, '#FFFAF2');
+    this.line([[58, y + 143], [332, y + 143]], '#E5D1B8', 1);
+    this.buttons.push({ id: 'sound_toggle', x: 51, y: y + 78, w: 288, h: 65 });
     if (enabled) {
       this.button('debug_open', 51, y + 159, 288, 48, '调试模式  ›', '#F7E1D0', C.brown, C.line, 14);
       this.readableText('开发调试已开启', 58, y + 238, 11, C.coral, 'left', 'bold');

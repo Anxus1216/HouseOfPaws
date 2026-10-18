@@ -34,6 +34,11 @@ test('settings entry, numeric keypad, save and disabled mode work through touch 
     handlers.end({ changedTouches: [{ clientX: 195, clientY: toY }] });
   };
   tapId('settings');
+  tapId('sound_toggle');
+  assert.equal(game.state.soundEnabled, false);
+  assert.equal(stored.paw_house_save_v1.soundEnabled, false);
+  tapId('sound_toggle');
+  assert.equal(game.state.soundEnabled, true);
   tapId('debug_open');
   assert.equal(game.ui.debugDraft.petId, null);
   tapId('debug_field:coins');
@@ -74,8 +79,46 @@ test('settings entry, numeric keypad, save and disabled mode work through touch 
   tapId('settings');
   game.scene.draw(game.state, game.ui);
   assert.equal(game.scene.buttons.some(item => item.id === 'debug_open'), false);
+  tapId('sound_toggle');
+  assert.equal(game.state.soundEnabled, false);
+  assert.equal(stored.paw_house_save_v1.soundEnabled, false);
+  tapId('sound_toggle');
+  assert.equal(game.state.soundEnabled, true);
   game.openDebugEditor();
   assert.equal(game.ui.debugEditor, null);
+});
+
+test('settings switch keeps one tappable row in both debug modes and screen heights', async () => {
+  const { default: Scene } = await import('../js/scene.js');
+  for (const height of [680, 844]) {
+    for (const debugEnabled of [false, true]) {
+      for (const soundEnabled of [false, true]) {
+        const scene = new Scene({}, { width: 390, height });
+        scene.h = height;
+        scene.dim = () => {};
+        const labels = [];
+        const boxes = [];
+        const circles = [];
+        scene.text = (label) => { labels.push(label); };
+        scene.box = (x, y, w, h, radius, fill) => { boxes.push({ x, y, w, h, fill }); };
+        scene.circle = (x, y, radius, fill) => { circles.push({ x, y, radius, fill }); };
+        scene.line = () => {};
+        scene.settings({ soundEnabled }, { debugEnabled });
+        const switchHit = scene.buttons.find(button => button.id === 'sound_toggle');
+        const track = boxes.find(box => box.w === 53 && box.h === 31);
+        assert.ok(switchHit && track);
+        assert.equal(switchHit.w, 288);
+        assert.equal(switchHit.h, 65);
+        assert.equal(scene.hit(track.x + track.w / 2, track.y + track.h / 2), 'sound_toggle');
+        assert.equal(track.fill, soundEnabled ? '#A97958' : '#DED0BE');
+        assert.equal(circles[0].x, soundEnabled ? 318.5 : 296.5);
+        assert.deepEqual(labels.filter(label => ['音效', '已开启', '已关闭', '开启', '关闭'].includes(label)), ['音效']);
+        assert.equal(scene.buttons.some(button => button.id === 'debug_open'), debugEnabled);
+        assert.equal(labels.includes('开发调试已开启'), debugEnabled);
+        assert.ok(switchHit.y >= 0 && switchHit.y + switchHit.h <= height);
+      }
+    }
+  }
 });
 
 test('editor hit areas and fixed actions stay within short and tall screens', async () => {
