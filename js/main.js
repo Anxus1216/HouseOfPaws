@@ -30,6 +30,7 @@ export default class Main {
     this.sounds = {};
     this.needsDraw = true;
     this.scene.onAssetReady = () => { this.needsDraw = true; };
+    this.scene.preloadSceneImages();
     this.visible = true;
     wx.onTouchStart(event => this.touch(event));
     wx.onTouchMove(event => this.move(event));
@@ -132,6 +133,7 @@ export default class Main {
       return;
     }
     if (id === 'home_tasks') { this.ui.page = 'tasks'; return; }
+    if (id === 'game_help') { this.notice('左右滑动篮子接星星，20 秒后结算奖励'); return; }
     if (id.startsWith('task_go_')) {
       const task = id.slice(8);
       this.ui.page = task === 'game' ? 'game' : 'home';
@@ -161,6 +163,7 @@ export default class Main {
     }
     if (id === 'daily') {
       if (daily(this.state)) { this.notice('领取成功：+30 爪爪币'); this.save(); }
+      else this.notice('今天已经领取过啦，明天再来吧');
       return;
     }
     if (id.startsWith('claim_')) {
@@ -231,7 +234,8 @@ export default class Main {
     if (!ui.playing || ui.paused || ui.page !== 'game' || !Number.isFinite(dt) || dt <= 0) return;
     const elapsed = Math.min(dt, ui.remaining);
     ui.remaining = Math.max(0, ui.remaining - dt);
-    const fieldBottom = this.scene.h - 320 + 160;
+    const field = this.scene.gameField();
+    const fieldBottom = field.bottom;
     const priorScore = ui.score;
     let simulated = 0;
     while (simulated < elapsed) {
@@ -239,7 +243,8 @@ export default class Main {
       ui.spawnTimer -= step;
       if (ui.spawnTimer <= 0) {
         ui.spawnTimer += .48;
-        ui.stars.push({ x: 66 + Math.random() * 258, y: 187, speed: 195 + Math.random() * 70 });
+        ui.stars.push({ x: 66 + Math.random() * 258, y: field.y + 34,
+          speed: 195 + Math.random() * 70 });
       }
       ui.stars = ui.stars.filter(star => {
         const previousY = star.y;

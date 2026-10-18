@@ -2,9 +2,10 @@ import { SPECIES, TASKS, canDaily, getDailyGrowth, MAX_DAILY_GROWTH } from './mo
 import { petDisplay } from './pet-display.js';
 
 const C = {
-  ink: '#49352F', muted: '#806C63', paper: '#FFFCF6', cream: '#FFF7EB',
-  peach: '#F8E5D4', coral: '#C96D58', pink: '#E8A69A', mint: '#8FB9A2',
-  brown: '#75564A', gold: '#E9B956', line: '#E9D9CA', shadow: '#D5BBA7',
+  ink: '#5A3F2E', muted: '#9A806B', paper: '#FFF3E2', cream: '#FFF3E2',
+  peach: '#F1DFC5', coral: '#B97956', pink: '#CE8EA1', mint: '#87A9A5',
+  brown: '#76533E', gold: '#DAB56D', line: '#DEC3A4', shadow: '#D5BBA7',
+  wash: '#F3E2C8', track: '#E6D2B6',
 };
 
 const TASK_ART = {
@@ -14,6 +15,7 @@ const TASK_ART = {
 };
 
 const CARE_SCENE = { wash: 'wash_nook', play: 'play_garden', rest: 'rest_evening' };
+const SCENE_NAMES = ['home_afternoon', 'wash_nook', 'play_garden', 'rest_evening', 'star_sky'];
 
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 
@@ -65,13 +67,12 @@ export default class Scene {
     if (stroke) { c.strokeStyle = stroke; c.lineWidth = line; c.stroke(); }
   }
 
-  sceneBackdrop(name, x, y, w, h, radius, fallback, focusY = .5) {
-    this.box(x, y, w, h, radius, fallback);
+  loadSceneImage(name) {
     let entry = this.sceneImages.get(name);
     if (!entry) {
       const createImage = this.canvas.createImage ? () => this.canvas.createImage() :
         typeof wx !== 'undefined' && wx.createImage ? () => wx.createImage() : null;
-      if (!createImage) return false;
+      if (!createImage) return null;
       try {
         const image = createImage();
         entry = { image, ready: false, failed: false };
@@ -80,13 +81,24 @@ export default class Scene {
           entry.ready = true;
           if (this.onAssetReady) this.onAssetReady();
         };
-        image.onerror = () => { entry.failed = true; };
+        image.onerror = () => { entry.failed = true; if (this.onAssetReady) this.onAssetReady(); };
         image.src = `assets/scenes/scene_${name}.jpg`;
       } catch (error) {
         this.sceneImages.delete(name);
-        return false;
+        return null;
       }
     }
+    return entry;
+  }
+
+  preloadSceneImages() {
+    SCENE_NAMES.forEach(name => this.loadSceneImage(name));
+  }
+
+  sceneBackdrop(name, x, y, w, h, radius, fallback, focusY = .5) {
+    this.box(x, y, w, h, radius, fallback);
+    const entry = this.loadSceneImage(name);
+    if (!entry) return false;
     const image = entry.image;
     if (!entry.ready || entry.failed || !image.width || !image.height) return false;
     const scale = Math.max(w / image.width, h / image.height);
@@ -157,22 +169,33 @@ export default class Scene {
   background() {
     const c = this.ctx;
     c.fillStyle = C.cream; c.fillRect(0, 0, 390, this.h);
-    c.fillStyle = '#F9EBDD'; c.fillRect(0, 0, 390, 132);
-    this.circle(356, 18, 92, '#FFF2E4');
-    this.circle(-21, 190, 69, '#FFF0E2');
-    this.circle(351, this.h - 185, 57, '#FFF0E2');
-    for (let i = 0; i < 7; i++) {
-      this.circle(26 + i * 56, 126, 1.7, '#DDBEAA');
-    }
   }
 
-  header(state, title, subtitle, settings = true) {
-    this.text('✦  爪 爪 小 屋  /  PAWPAW', 22, 29, 11, C.coral, 'left', 'bold');
-    this.text(title, 22, 72, 25, C.ink, 'left', 'bold');
-    this.text(subtitle, 23, 103, 12, C.muted);
-    if (settings) this.button('settings', 246, 15, 40, 40, '⚙', C.paper, C.brown, C.line, 19);
-    this.box(293, 15, 77, 40, 20, C.paper, C.line);
-    this.text('✦ ' + state.coins, 331, 36, 14, C.brown, 'center', 'bold');
+  layout() {
+    const ratio = clamp((this.h - 680) / 164, 0, 1);
+    const extra = Math.max(0, this.h - 844);
+    return { ratio, extra, sceneY: 136 + 33 * ratio,
+      sceneH: 165 + 83 * ratio + extra, navY: this.h - 74 };
+  }
+
+  header(state, eyebrow, title, subtitle, settings = true) {
+    const { ratio } = this.layout();
+    this.circle(37, 36, 16, '#ECD1AE');
+    this.ellipse(37, 40, 7, 6, C.brown);
+    [[28, 31], [34, 27], [41, 27], [47, 31]].forEach(([x, y]) => this.circle(x, y, 2.4, C.brown));
+    this.text('爪爪小屋', 60, 30, 15, C.ink, 'left', 'bold');
+    this.text('P A W P A W   H O U S E', 60, 47, 7, C.muted);
+    this.box(274, 20, 69, 32, 16, C.peach);
+    this.text('✦  ' + state.coins, 308, 37, 13, C.brown, 'center', 'bold');
+    if (settings) {
+      this.text('⚙', 366, 36, 20, C.brown, 'center');
+      this.buttons.push({ id: 'settings', x: 346, y: 17, w: 38, h: 38 });
+    }
+    const eyebrowY = 83 + 16 * ratio;
+    this.box(20, eyebrowY - 2, 22, 2, 1, C.coral);
+    this.text(eyebrow, 51, eyebrowY, 10, C.coral, 'left', 'bold');
+    this.text(title, 20, eyebrowY + 24, 23, C.ink, 'left', 'bold');
+    if (ratio > .3) this.text(subtitle, 21, eyebrowY + 48, 11, C.muted);
   }
 
   face(expression, t) {
@@ -215,7 +238,7 @@ export default class Scene {
         const image = createImage();
         entry = { image, ready: false, failed: false };
         this.petImages.set(key, entry);
-        image.onload = () => { entry.ready = true; };
+        image.onload = () => { entry.ready = true; if (this.onAssetReady) this.onAssetReady(); };
         image.onerror = () => { entry.failed = true; };
         image.src = `assets/pets/sprites/pet_${key}.png`;
       } catch (error) {
@@ -310,199 +333,227 @@ export default class Scene {
 
   stats(pet, y) {
     const items = [
-      ['饱腹', pet.hunger, '#E9AD7D'], ['清洁', pet.clean, '#A7C9C7'],
-      ['快乐', pet.happy, '#E9A9B8'], ['精力', pet.energy, '#B9B6D9'],
+      ['饱腹', pet.hunger, '#DCA277'], ['清洁', pet.clean, '#87AAA4'],
+      ['快乐', pet.happy, '#CE8EA1'], ['精力', pet.energy, '#A4A2C8'],
     ];
     items.forEach((item, i) => {
-      const x = 39 + (i % 2) * 163, yy = y + Math.floor(i / 2) * 42;
+      const x = 36 + (i % 2) * 170, yy = y + Math.floor(i / 2) * 35;
       const low = item[1] < 25;
-      this.text(item[0], x, yy, 12, low ? C.coral : C.brown, 'left', 'bold');
-      this.text(Math.round(item[1]) + '%', x + 125, yy, 11, low ? C.coral : C.muted, 'right', 'bold');
-      this.box(x, yy + 12, 125, 7, 4, '#F0E8E2');
-      this.box(x, yy + 12, 125 * clamp(item[1], 0, 100) / 100, 7, 4, low ? C.coral : item[2]);
+      this.circle(x + 3, yy, 3, item[2]);
+      this.text(item[0], x + 10, yy, 10, low ? C.coral : C.muted);
+      this.text(Math.round(item[1]) + '%', x + 137, yy, 10, low ? C.coral : C.brown, 'right', 'bold');
+      this.box(x, yy + 11, 137, 4, 2, C.track);
+      this.box(x, yy + 11, 137 * clamp(item[1], 0, 100) / 100, 4, 2, low ? C.coral : item[2]);
     });
   }
 
   home(state, ui) {
     const pet = state.pets[state.active];
-    this.header(state, pet.name + '的小小日常', '照顾它的心情，一起收集好时光');
-    const actionsY = this.h - 195;
-    const cardBottom = actionsY - 30;
-    const roomY = 150;
-    // Reserve space below the room for the daily growth label and both stat rows.
-    const roomH = Math.max(162, cardBottom - roomY - 143);
-    this.box(20, 132, 350, cardBottom - 132, 25, C.paper, C.line, 1.3);
+    this.header(state, '陪伴日记', '今天也一起慢慢长大', '多一点陪伴，就多一点好心情');
+    const { ratio, sceneY, sceneH } = this.layout();
+    const sheetY = sceneY + sceneH + 10 + 5 * ratio;
+    const sheetH = 151 + 17 * ratio;
+    const headingY = sheetY + sheetH + 15 + 4 * ratio;
+    const actionsY = headingY + 28 + 4 * ratio;
     const display = petDisplay(pet, ui);
     const backdrop = CARE_SCENE[display.action] || 'home_afternoon';
-    this.sceneBackdrop(backdrop, 35, roomY, 320, roomH, 20, '#F7E8D5');
-    const petSize = clamp(roomH / 345, .54, .88);
-    this.pet(pet.id, 195, roomY + roomH - petSize * 107 - 10, petSize, this.time,
+    this.sceneBackdrop(backdrop, 20, sceneY, 350, sceneH, 23, '#F2D8B8');
+    this.box(20, sceneY, 350, sceneH, 23, 'rgba(0,0,0,0)', C.coral, 1.5);
+    const petSize = clamp(sceneH / 300, .55, .94);
+    this.pet(pet.id, 195, sceneY + sceneH - petSize * 130 - 5, petSize, this.time,
       display.expression, display.action);
-    this.buttons.push({ id: 'pet_tap', x: 94, y: roomY + 5, w: 204, h: roomH - 12 });
+    this.buttons.push({ id: 'pet_tap', x: 82, y: sceneY + 4, w: 225, h: sceneH - 8 });
     if (display.speech) {
-      this.box(181, roomY + 12, 157, 32, 16, C.paper);
-      this.text(display.speech.slice(0, 13), 259, roomY + 29, 11, C.brown, 'center');
+      this.box(181, sceneY + 11, 162, 30, 15, C.paper);
+      this.text(display.speech.slice(0, 13), 262, sceneY + 27, 11, C.brown, 'center');
     }
     if (display.statDelta) {
       const lines = display.statDelta.split('|');
       const twoLines = lines.length > 1;
-      this.box(43, roomY + roomH - (twoLines ? 59 : 44), 304,
-        twoLines ? 43 : 27, 13, '#FFF9EE');
-      this.text(lines[0], 195, roomY + roomH - (twoLines ? 45 : 30),
+      this.box(43, sceneY + sceneH - (twoLines ? 54 : 37), 304,
+        twoLines ? 43 : 27, 13, '#FFF5E7');
+      this.text(lines[0], 195, sceneY + sceneH - (twoLines ? 40 : 23),
         twoLines ? 10 : 12, C.coral, 'center', 'bold');
-      if (twoLines) this.text(lines[1], 195, roomY + roomH - 26,
+      if (twoLines) this.text(lines[1], 195, sceneY + sceneH - 21,
         11, C.brown, 'center', 'bold');
     }
-    const cardY = roomY + roomH + 12;
-    this.text('LV.' + pet.level + '  ' + pet.name, 39, cardY + 4, 15, C.ink, 'left', 'bold');
+    this.box(20, sheetY, 350, sheetH, 19, C.wash);
+    this.text(pet.name, 36, sheetY + 24, 17, C.ink, 'left', 'bold');
+    this.box(93, sheetY + 12, 42, 22, 6, '#E6C8A8');
+    this.text('LV. ' + pet.level, 114, sheetY + 23, 10, C.brown, 'center', 'bold');
     const needed = pet.level * 40;
-    this.text(pet.level >= 99 ? '已满级' : `成长 ${pet.xp}/${needed}`, 336, cardY + 4, 11, C.muted, 'right');
-    this.box(39, cardY + 20, 312, 6, 3, '#F0E7E0');
-    this.box(39, cardY + 20, 312 * clamp(pet.xp / needed, 0, 1), 6, 3, C.pink);
+    this.text(pet.level >= 99 ? '已满级' : `成长 ${pet.xp}/${needed}`, 354, sheetY + 24, 10, C.muted, 'right');
+    this.box(36, sheetY + 43, 238, 5, 3, C.track);
+    this.box(36, sheetY + 43, 238 * clamp(pet.xp / needed, 0, 1), 5, 3, C.coral);
     const todayGrowth = getDailyGrowth(pet);
-    this.text(`今日成长 ${todayGrowth}/${MAX_DAILY_GROWTH}`, 39, cardY + 40, 11,
-      todayGrowth >= MAX_DAILY_GROWTH ? C.coral : C.muted);
-    this.stats(pet, cardY + 59);
-    this.text('照料小伙伴', 22, actionsY - 17, 16, C.ink, 'left', 'bold');
+    this.text(`今日 ${todayGrowth}/${MAX_DAILY_GROWTH}`, 353, sheetY + 45, 10,
+      todayGrowth >= MAX_DAILY_GROWTH ? C.coral : C.muted, 'right');
+    this.box(36, sheetY + 60, 318, 1, 1, C.line);
+    this.stats(pet, sheetY + 78);
+    this.text('照料' + pet.name, 20, headingY, 15, C.ink, 'left', 'bold');
     const tasks = state.tasks || {};
     const ready = TASKS.filter(task =>
       (tasks.progress || {})[task.id] >= task.target &&
       !(tasks.claimed || {})[task.id]).length;
-    this.button('home_tasks', 254, actionsY - 34, 115, 29,
-      ready ? `待领奖励 ${ready} ›` : '今日目标  ›',
-      ready ? '#F8DDC8' : C.paper, ready ? C.coral : C.brown, C.line, 11);
+    const progress = TASKS.filter(task => (tasks.progress || {})[task.id] >= task.target).length;
+    this.text(ready ? `待领奖励 ${ready}  ›` : `今日目标 ${progress}/${TASKS.length}  ›`,
+      370, headingY, 11, C.coral, 'right');
+    this.buttons.push({ id: 'home_tasks', x: 225, y: headingY - 17, w: 150, h: 34 });
     [['feed', '◉', '喂食', '✦ 5'], ['wash', '◌', '清洁', '免费'],
       ['play', '✿', '玩耍', '免费'], ['rest', '☾', '休息', '免费']].forEach((a, i) => {
-      const x = 20 + i * 91;
+      const x = 26 + i * 89;
       const value = [pet.hunger, pet.clean, pet.happy, pet.energy][i];
       const unavailable = Math.round(value) >= 100 || (a[0] === 'play' && pet.energy < 29) ||
         (a[0] === 'feed' && state.coins < 5);
-      this.box(x, actionsY, 78, 81, 17, unavailable ? '#F5EFE8' : C.paper, C.line);
-      this.circle(x + 39, actionsY + 27, 19, unavailable ? '#EAE1D9' :
-        i === 1 ? '#E2F0EC' : i === 3 ? '#EEEAF4' : '#FBE7DB');
-      this.text(a[1], x + 39, actionsY + 28, 23,
-        unavailable ? '#A99B90' : i === 1 ? '#5E9C9A' : i === 3 ? '#8883AD' : C.coral, 'center');
-      this.text(a[2], x + 39, actionsY + 56, 12, unavailable ? C.muted : C.brown, 'center', 'bold');
-      this.text(unavailable ? '暂不可用' : a[3], x + 39, actionsY + 72, 9, C.muted, 'center');
-      this.buttons.push({ id: a[0], x, y: actionsY, w: 78, h: 81 });
+      this.circle(x + 36, actionsY + 22, 22, unavailable ? '#E9DFD2' :
+        i === 1 ? '#E6E9DE' : i === 3 ? '#E6DFE4' : '#EDD6B7');
+      this.text(a[1], x + 36, actionsY + 23, 24,
+        unavailable ? '#AC9A89' : i === 1 ? '#6F9B9A' : C.brown, 'center');
+      this.text(a[2], x + 36, actionsY + 54, 11, unavailable ? C.muted : C.brown, 'center', 'bold');
+      this.text(unavailable ? '暂不可用' : a[3], x + 36, actionsY + 70, 9, C.muted, 'center');
+      this.buttons.push({ id: a[0], x, y: actionsY, w: 75, h: 82 });
     });
     this.nav('home');
   }
 
   nav(active) {
-    const y = this.h - 91;
-    this.box(16, y, 358, 72, 22, C.paper, C.line, 1.3);
+    const y = this.layout().navY;
+    this.box(20, y, 350, 1, 1, C.line);
     [['home', '⌂', '小屋'], ['collection', '♡', '萌宠'],
       ['tasks', '✓', '任务'], ['game', '✦', '游戏']].forEach((item, i) => {
-      const x = 22 + i * 88;
+      const x = 20 + i * 87.5;
       const selected = active === item[0];
-      if (selected) this.box(x + 2, y + 7, 82, 58, 17, '#F7E4D7');
-      this.text(item[1], x + 43, y + 27, 24, selected ? C.coral : C.muted, 'center');
-      this.text(item[2], x + 43, y + 51, 11, selected ? C.coral : C.muted, 'center', 'bold');
-      this.buttons.push({ id: 'nav_' + item[0], x, y: y + 5, w: 86, h: 62 });
+      if (selected) this.box(x + 30, y, 27, 3, 1.5, C.coral);
+      this.text(item[1], x + 44, y + 27, 23, selected ? C.coral : C.brown, 'center');
+      this.text(item[2], x + 44, y + 54, 11, selected ? C.coral : C.muted, 'center', selected ? 'bold' : 'normal');
+      this.buttons.push({ id: 'nav_' + item[0], x, y: y + 3, w: 87, h: 67 });
     });
   }
 
   collection(state) {
-    this.header(state, '小伙伴们', '每一段陪伴，都有自己的故事');
-    const space = Math.min(151, (this.h - 243) / 3);
+    this.header(state, '小伙伴们', '每一位都值得被珍惜', '选择此刻想陪伴的伙伴');
+    const { sceneY, ratio } = this.layout();
+    const rowH = 135 + 25 * ratio;
+    const gap = 9 + 2 * ratio;
     SPECIES.forEach((spec, i) => {
-      const y = 137 + i * space;
+      const y = sceneY + i * (rowH + gap);
       const owned = !!state.pets[spec.id];
       const selected = state.active === spec.id;
-      this.box(20, y, 350, 132, 21, selected ? '#FFF8EC' : C.paper,
-        selected ? '#DBAD88' : C.line, selected ? 2 : 1);
-      this.circle(91, y + 66, 50, i === 0 ? '#FAE6D5' : i === 1 ? '#F2E7E7' : '#F5E2D3');
-      this.pet(spec.id, 91, y + 80, .34, this.time);
-      this.text(spec.name, 158, y + 28, 19, C.ink, 'left', 'bold');
-      this.text(spec.type, 158, y + 54, 11, C.muted);
-      this.text(spec.line, 158, y + 72, 10, C.muted);
-      this.text(owned ? `LV.${state.pets[spec.id].level}  已领养` :
-        spec.cost ? `✦ ${spec.cost} 爪爪币` : '免费领养', 158, y + 105, 11, C.brown, 'left', 'bold');
-      this.button(owned ? 'select_' + spec.id : 'adopt_' + spec.id, 265, y + 84, 90, 42,
-        owned ? selected ? '陪伴中' : '去陪伴' : state.coins >= spec.cost ? '领养' :
-          `还差 ${spec.cost - state.coins}`,
-        selected ? '#F5E8D9' : !owned && state.coins < spec.cost ? '#F7EEE6' : C.coral,
-        selected || !owned && state.coins < spec.cost ? C.brown : '#FFF', null, 11);
+      if (selected) this.box(20, y, 350, rowH, 19, C.wash);
+      else this.box(20, y + rowH - 1, 350, 1, 1, C.line);
+      const thumbY = y + 12;
+      this.box(32, thumbY, 112, rowH - 24, 17,
+        i === 0 ? '#F9EBDD' : i === 1 ? '#EEE7E7' : '#F4E5D8');
+      const petSize = (rowH - 28) / 300;
+      this.pet(spec.id, 88, y + rowH - 21 - petSize * 130, petSize, this.time);
+      this.text(spec.type, 155, y + 31, 10, C.muted);
+      this.text(spec.name, 155, y + 56, 20, C.ink, 'left', 'bold');
+      this.text(spec.line, 155, y + 81, 10, C.muted);
+      this.text(owned ? `LV. ${state.pets[spec.id].level} · 陪伴中` :
+        spec.cost ? `领养需 ✦ ${spec.cost}` : '免费领养', 155, y + rowH - 24, 10, C.coral);
+      this.button(owned ? 'select_' + spec.id : 'adopt_' + spec.id,
+        282, y + rowH - 40, 76, 29,
+        owned ? selected ? '陪伴中' : '去陪伴' : state.coins >= spec.cost ? '领养' : '去领币',
+        selected ? C.coral : C.paper, selected ? '#FFF' : C.brown,
+        selected ? null : C.line, 10);
     });
     this.nav('collection');
   }
 
   welcome(state) {
-    this.header(state, '欢迎来到爪爪小屋', '你的第一段陪伴，就从这里开始', false);
-    this.box(20, 132, 350, this.h - 150, 25, C.paper, C.line, 1.3);
-    const centerY = clamp((this.h - 680) * .35 + 295, 295, 348);
-    this.box(43, 153, 304, Math.max(285, centerY - 8), 26, '#F7E7D3');
-    this.circle(195, centerY - 23, 119, '#FDEFD9');
-    this.ellipse(195, centerY + 105, 106, 16, '#D7B79D');
-    this.pet('cat', 195, centerY, 1.04, this.time);
-    this.box(117, centerY + 123, 156, 29, 15, '#F7E2CF');
-    this.text('免费领养', 195, centerY + 139, 12, C.coral, 'center', 'bold');
-    this.text('奶糖', 195, centerY + 176, 25, C.ink, 'center', 'bold');
-    this.text('喜欢晒太阳的奶油小猫，正等着你', 195, centerY + 205, 12, C.muted, 'center');
-    this.text('糯米和团团会在小屋里等你认识', 195, this.h - 151, 11, C.muted, 'center');
-    this.button('adopt_selected', 53, this.h - 125, 284, 57,
-      '领养奶糖 · 开始陪伴  →', C.coral, '#FFF', null, 16);
+    this.header(state, '欢迎来到小屋', '一起慢慢长大', '从第一位小伙伴开始', false);
+    const { sceneY, sceneH } = this.layout();
+    const visualH = sceneH + Math.max(70, (this.h - 680) * .25);
+    this.sceneBackdrop('home_afternoon', 20, sceneY, 350, visualH, 23, '#F2D8B8');
+    this.box(20, sceneY, 350, visualH, 23, 'rgba(0,0,0,0)', C.coral, 1.5);
+    const petSize = clamp(visualH / 300, .72, 1.08);
+    this.pet('cat', 195, sceneY + visualH - 130 * petSize - 6, petSize, this.time);
+    const infoY = sceneY + visualH + 23;
+    this.text('奶糖', 195, infoY, 24, C.ink, 'center', 'bold');
+    this.text('喜欢晒太阳的奶油小猫，正等着你', 195, infoY + 29, 12, C.muted, 'center');
+    this.text('糯米和团团也会在小屋里等你认识', 195, this.h - 137, 11, C.muted, 'center');
+    this.button('adopt_selected', 53, this.h - 114, 284, 53,
+      '免费领养奶糖  →', C.coral, '#FFF', null, 15);
   }
 
   tasks(state) {
-    this.header(state, '今天的陪伴清单', '做一点小事，攒一份好心情');
+    this.header(state, '每日清单', '今天的小小约定', '做一点小事，换一份好心情');
+    const { sceneY, ratio, extra } = this.layout();
     const progress = state.tasks && state.tasks.progress || {};
     const claimed = state.tasks && state.tasks.claimed || {};
-    const gap = clamp((this.h - 700) / 9 + 14, 12, 28);
+    const completed = TASKS.filter(task => (progress[task.id] || 0) >= task.target).length;
+    this.box(20, sceneY, 350, 58, 18, '#EED7B4');
+    this.text(`今天已完成 ${completed} / ${TASKS.length}`, 38, sceneY + 29, 14, C.brown, 'left', 'bold');
+    this.text('把小事变成好回忆  ✦', 352, sceneY + 29, 10, C.muted, 'right');
+    const rowStart = sceneY + 69;
+    const rowStep = 105 + 19 * ratio;
     TASKS.forEach((task, i) => {
-      const y = 139 + i * (129 + gap);
+      const y = rowStart + i * rowStep;
       const art = TASK_ART[task.id];
       const count = clamp(Number(progress[task.id]) || 0, 0, task.target);
       const done = count >= task.target;
       const claimedThis = !!claimed[task.id];
-      this.box(20, y, 350, 129, 21, done && !claimedThis ? '#FFF7E9' : C.paper,
-        done && !claimedThis ? '#E8BE85' : C.line, done && !claimedThis ? 1.6 : 1);
-      this.circle(60, y + 37, 22, art.color);
-      this.text(art.mark, 60, y + 38, 22, C.brown, 'center', 'bold');
-      this.text(art.title, 91, y + 29, 17, C.ink, 'left', 'bold');
-      this.text(claimedThis ? '今天已完成，明天继续吧' : task.label, 91, y + 55, 11, C.muted);
-      this.box(38, y + 79, 190, 7, 4, '#F0E8E2');
-      this.box(38, y + 79, 190 * count / task.target, 7, 4, done ? C.mint : C.gold);
-      this.text(`${count}/${task.target}`, 236, y + 82, 11, C.muted);
-      this.text(`奖励  ✦ ${task.reward}`, 39, y + 108, 12, C.brown, 'left', 'bold');
+      this.circle(54, y + 24, 19, art.color);
+      this.text(art.mark, 54, y + 25, 20, C.coral, 'center', 'bold');
+      this.text(art.title, 82, y + 17, 15, C.ink, 'left', 'bold');
+      this.text(claimedThis ? '今天已完成，明天继续吧' : task.label, 82, y + 40, 10, C.muted);
+      this.text('✦ ' + task.reward, 354, y + 18, 10, C.coral, 'right', 'bold');
+      this.text(`${count} / ${task.target}`, 82, y + 74, 11, C.muted);
       this.button(claimedThis ? 'task_done_' + task.id : done ? 'claim_' + task.id :
-        'task_go_' + task.id, 251, y + 86, 98, 40,
-        claimedThis ? '已领取 ✓' : done ? '领取奖励' : '去完成 →',
-        claimedThis ? '#F1EBE5' : done ? C.coral : '#F8EEE4',
-        claimedThis ? C.muted : done ? '#FFF' : C.brown, null, 11);
+        'task_go_' + task.id, 277, y + 62, 80, 30,
+        claimedThis ? '已领取' : done ? '领取奖励' : task.id === 'game' ? '去游戏 →' : '去完成 →',
+        claimedThis ? '#EFE3D3' : done ? C.coral : C.paper,
+        claimedThis ? C.muted : done ? '#FFF' : C.coral,
+        !claimedThis && !done ? C.line : null, 10);
+      this.box(36, y + rowStep - 1, 318, 1, 1, C.line);
     });
+    const giftY = rowStart + TASKS.length * rowStep + 6 + extra;
+    this.box(20, giftY, 350, 51, 17, C.wash);
+    this.text('✦  每日礼物 · +30 爪爪币', 37, giftY + 26, 11, C.brown);
+    this.button('daily', 281, giftY + 11, 77, 30,
+      canDaily(state) ? '领取礼物' : '明天再来',
+      canDaily(state) ? C.coral : '#E6D5C0', canDaily(state) ? '#FFF' : C.muted,
+      null, 10);
     this.nav('tasks');
   }
 
+  gameField() {
+    const { sceneY, ratio, extra } = this.layout();
+    const h = 356 + 104 * ratio + extra;
+    return { x: 20, y: sceneY, w: 350, h, bottom: sceneY + h };
+  }
+
   game(state, ui) {
-    this.header(state, '星星接接乐', '把闪亮的星星装进小篮子');
-    this.box(20, 132, 350, this.h - 235, 25, C.paper, C.line, 1.3);
-    const fieldY = 153, fieldH = this.h - 320;
-    this.sceneBackdrop('star_sky', 36, fieldY, 318, fieldH, 21, '#174768', .12);
+    this.header(state, '星星接接乐', '把星光装进小篮子', '20 秒，来一场轻松的冒险');
+    const field = this.gameField();
+    const fieldY = field.y, fieldH = field.h;
+    this.sceneBackdrop('star_sky', field.x, fieldY, field.w, fieldH, 23, '#174768', .12);
+    this.box(field.x, fieldY, field.w, fieldH, 23, 'rgba(0,0,0,0)', C.coral, 1.5);
     if (ui.playing) {
-      this.box(49, fieldY + 11, 235, 40, 20, '#F8F0DC');
-      this.text('✦  ' + ui.score, 66, fieldY + 32, 17, C.ink, 'left', 'bold');
-      this.text(Math.ceil(ui.remaining) + ' 秒', 265, fieldY + 32, 13, C.brown, 'right', 'bold');
-      this.button('pause_game', 294, fieldY + 11, 44, 40, 'Ⅱ', C.paper, C.brown);
+      this.box(36, fieldY + 13, 246, 38, 19, C.paper);
+      this.text('✦  ' + ui.score, 54, fieldY + 33, 16, C.ink, 'left', 'bold');
+      this.text(Math.ceil(ui.remaining) + ' 秒', 267, fieldY + 33, 12, C.brown, 'right', 'bold');
+      this.button('pause_game', 306, fieldY + 13, 43, 38, 'Ⅱ', C.paper, C.brown);
       (ui.stars || []).forEach(s => this.text('✦', s.x, s.y, 34, '#FFD777', 'center', 'bold'));
       this.box(ui.basketX - 43, fieldY + fieldH - 50, 86, 28, 12, '#D8937E');
       this.box(ui.basketX - 48, fieldY + fieldH - 53, 96, 10, 5, '#A46B56');
     } else {
-      this.circle(195, fieldY + fieldH * .32, 66, '#587B6F');
-      this.text('✦', 195, fieldY + fieldH * .32, 75, '#FFD777', 'center', 'bold');
+      this.text('✦', 195, fieldY + fieldH * .43, 64, '#FFE1A0', 'center', 'bold');
       if (ui.gameResult) {
-        this.text('本局完成！', 195, fieldY + fieldH * .55, 21, '#FFF9E7', 'center', 'bold');
-        this.text(ui.gameResult, 195, fieldY + fieldH * .64, 12, '#FFF1D3', 'center');
-        if (ui.gameGrowth) this.text(ui.gameGrowth, 195, fieldY + fieldH * .70,
+        this.text('本局完成！', 195, field.bottom - 158, 20, '#FFF9E7', 'center', 'bold');
+        this.text(ui.gameResult, 195, field.bottom - 130, 11, '#FFF1D3', 'center');
+        if (ui.gameGrowth) this.text(ui.gameGrowth, 195, field.bottom - 108,
           11, '#FFD777', 'center', 'bold');
       } else {
-        this.text('左右滑动篮子，接住小星星', 195, fieldY + fieldH * .60, 15, '#FFF9E7', 'center');
-        this.text('每局 20 秒 · 星星越多奖励越多', 195, fieldY + fieldH * .69, 11, '#DCE8D8', 'center');
+        this.text('接住每一颗小星星', 195, field.bottom - 137, 18, '#FFF9E7', 'center', 'bold');
+        this.text('左右滑动篮子，收集闪亮的好心情', 195, field.bottom - 109, 11, '#FFF1D3', 'center');
       }
-      this.button('start_game', 93, fieldY + fieldH - 79, 204, 50,
+      this.button('start_game', 93, fieldY + fieldH - 67, 204, 46,
         ui.gameResult ? '再玩一局  →' : '开始接星星  →', C.coral, '#FFF');
     }
+    this.text('每局 20 秒 · 星星越多奖励越多', 21, field.bottom + 24, 10, C.muted);
+    this.text('玩法说明  ›', 368, field.bottom + 24, 10, C.coral, 'right');
+    this.buttons.push({ id: 'game_help', x: 281, y: field.bottom + 7, w: 91, h: 34 });
     this.nav('game');
     if (ui.playing && ui.paused) {
       this.dim(); this.buttons = [];
@@ -575,9 +626,6 @@ export default class Scene {
     else if (ui.page === 'tasks') this.tasks(state);
     else if (ui.page === 'game') this.game(state, ui);
     else this.home(state, ui);
-    if (state.active && canDaily(state) && ui.page !== 'game') {
-      this.button('daily', 255, 83, 113, 32, '✦ 每日礼物', C.paper, C.coral, null, 11);
-    }
     this.toast(ui);
     if (state.active && ui.guideStep > 0) this.guide(ui.guideStep);
     if (ui.showSettings) this.settings(state);

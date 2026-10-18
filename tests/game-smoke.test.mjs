@@ -99,7 +99,7 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   game.ui.page = 'game';
   game.startGame();
   game.ui.spawnTimer = 100;
-  game.ui.stars = [{ x: 195, y: game.scene.h - 320 + 160 - 60, speed: 250 }];
+  game.ui.stars = [{ x: 195, y: game.scene.gameField().bottom - 60, speed: 250 }];
   game.updateGame(2);
   assert.equal(game.ui.remaining, 18, 'a dropped frame counts its real elapsed time');
   assert.equal(game.ui.score, 1, 'a star crossing the basket is caught');
@@ -173,7 +173,7 @@ test('main actions stay reachable on a shorter portrait screen', async () => {
   }
 });
 
-test('growth and status bars stay inside the home card on short and tall screens', async () => {
+test('growth and status bars stay inside the home status sheet on short and tall screens', async () => {
   const { default: Scene } = await import('../js/scene.js');
   const { initialState, adopt } = await import('../js/model.js');
   const context = new Proxy({}, { get(target, key) { return target[key] || (() => {}); } });
@@ -186,13 +186,13 @@ test('growth and status bars stay inside the home card on short and tall screens
     scene.box = (x, y, w, h, r, fill) => boxes.push({ x, y, w, h, fill });
     scene.text = (value, x, y) => labels.push({ value, x, y });
     scene.draw(state, ui);
-    const card = boxes.find(box => box.x === 20 && box.y === 132 && box.w === 350);
-    const statusBars = boxes.filter(box => (box.x === 39 || box.x === 202) &&
-      box.w === 125 && box.h === 7 && box.fill === '#F0E8E2');
-    const title = labels.find(label => label.value === '照料小伙伴');
-    assert.ok(card && title && statusBars.length === 4);
+    const sheet = boxes.find(box => box.x === 20 && box.w === 350 && box.fill === '#F3E2C8');
+    const statusBars = boxes.filter(box => (box.x === 36 || box.x === 206) &&
+      box.w === 137 && box.h === 4 && box.fill === '#E6D2B6');
+    const title = labels.find(label => label.value === '照料奶糖');
+    assert.ok(sheet && title && statusBars.length === 4);
     const statusBottom = Math.max(...statusBars.map(box => box.y + box.h));
-    assert.ok(statusBottom <= card.y + card.h - 8, `${height}px: bars fit within card`);
+    assert.ok(statusBottom <= sheet.y + sheet.h - 8, `${height}px: bars fit within sheet`);
     assert.ok(title.y - statusBottom >= 12, `${height}px: title clears the bars`);
   }
 });
@@ -244,6 +244,32 @@ test('approved scene backgrounds load once, crop to cover, and request a redraw'
   assert.equal(scene.sceneBackdrop('home_afternoon', 35, 150, 320, 160, 20, '#fff'), true);
   assert.deepEqual(drawn[0].slice(1), [0, 120, 960, 480, 35, 150, 320, 160]);
   assert.equal(requested.length, 1, 'loaded background is cached');
+});
+
+test('all care and game scenes preload once and redraw when an image arrives', async () => {
+  const { default: Scene } = await import('../js/scene.js');
+  const requested = [], images = [];
+  const context = new Proxy({}, { get: () => () => {} });
+  const scene = new Scene(context, { width: 390, height: 680, createImage: () => {
+    const image = { width: 960, height: 720, set src(value) { requested.push(value); } };
+    images.push(image);
+    return image;
+  } });
+  let invalidations = 0;
+  scene.onAssetReady = () => { invalidations++; };
+  scene.preloadSceneImages();
+  assert.deepEqual(requested, [
+    'assets/scenes/scene_home_afternoon.jpg',
+    'assets/scenes/scene_wash_nook.jpg',
+    'assets/scenes/scene_play_garden.jpg',
+    'assets/scenes/scene_rest_evening.jpg',
+    'assets/scenes/scene_star_sky.jpg',
+  ]);
+  images[1].onload();
+  assert.equal(invalidations, 1);
+  assert.equal(scene.sceneBackdrop('wash_nook', 20, 136, 350, 165, 23, '#fff'), true);
+  scene.preloadSceneImages();
+  assert.equal(requested.length, 5, 'scene transitions reuse cached images');
 });
 
 test('short game field keeps the moon near the top of the night scene', async () => {
@@ -319,11 +345,11 @@ test('home renders matching care sprite and speech before and after expiry', asy
   scene.home(state, ui);
   assert.deepEqual(pose, { expression: 'sleepy', action: 'rest' });
   assert.ok(text.includes('休息中，补充精力～'));
-  assert.ok(text.includes('今日成长 0/100'));
+  assert.ok(text.includes('今日 0/100'));
   state.pets.cat.dailyGrowth.earned = 100;
   text.length = 0;
   scene.home(state, ui);
-  assert.ok(text.includes('今日成长 100/100'));
+  assert.ok(text.includes('今日 100/100'));
   ui.expressionUntil = Date.now() - 1;
   text.length = 0;
   scene.home(state, ui);
