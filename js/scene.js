@@ -28,6 +28,7 @@ export default class Scene {
     this.h = 844;
     this.offsetX = 0;
     this.offsetY = 0;
+    this.headerControlsY = 64;
     this.buttons = [];
     this.time = 0;
     this.petImages = new Map();
@@ -36,11 +37,12 @@ export default class Scene {
 
   resize() {
     // All pages share a 390-unit width. Height follows the visible safe area.
-    let top = 0, bottom = 0;
+    let top = 0, bottom = 0, windowWidth = this.canvas.width;
     try {
       const info = wx.getSystemInfoSync && wx.getSystemInfoSync();
+      if (info && info.windowWidth) windowWidth = info.windowWidth;
       if (info && info.safeArea && info.windowWidth) {
-        const ratio = this.canvas.width / info.windowWidth;
+        const ratio = this.canvas.width / windowWidth;
         top = clamp(info.safeArea.top * ratio, 0, this.canvas.height * .1);
         bottom = clamp((info.screenHeight - info.safeArea.bottom) * ratio, 0, this.canvas.height * .08);
       }
@@ -50,6 +52,17 @@ export default class Scene {
     this.h = usable / this.scale;
     this.offsetX = (this.canvas.width - 390 * this.scale) / 2;
     this.offsetY = top;
+    // The native capsule uses screen pixels; convert its bottom edge into Canvas units.
+    this.headerControlsY = 64;
+    try {
+      const menu = wx.getMenuButtonBoundingClientRect && wx.getMenuButtonBoundingClientRect();
+      if (menu && Number.isFinite(menu.top) && Number.isFinite(menu.bottom) &&
+          menu.bottom > menu.top && menu.top >= 0) {
+        const pixelRatio = this.canvas.width / windowWidth;
+        this.headerControlsY = Math.max(64,
+          ((menu.bottom + 10) * pixelRatio - this.offsetY) / this.scale);
+      }
+    } catch (e) { /* Keep the fallback when the menu geometry is unavailable. */ }
   }
 
   roundedPath(x, y, w, h, r) {
@@ -186,11 +199,12 @@ export default class Scene {
     [[28, 31], [34, 27], [41, 27], [47, 31]].forEach(([x, y]) => this.circle(x, y, 2.4, C.brown));
     this.text('爪爪小屋', 60, 30, 15, C.ink, 'left', 'bold');
     this.text('P A W P A W   H O U S E', 60, 47, 7, C.muted);
-    this.box(274, 20, 69, 32, 16, C.peach);
-    this.text('✦  ' + state.coins, 308, 37, 13, C.brown, 'center', 'bold');
+    const controlsY = this.headerControlsY;
+    this.box(274, controlsY + 3, 69, 32, 16, C.peach);
+    this.text('✦  ' + state.coins, 308, controlsY + 20, 13, C.brown, 'center', 'bold');
     if (settings) {
-      this.text('⚙', 366, 36, 20, C.brown, 'center');
-      this.buttons.push({ id: 'settings', x: 346, y: 17, w: 38, h: 38 });
+      this.text('⚙', 366, controlsY + 19, 20, C.brown, 'center');
+      this.buttons.push({ id: 'settings', x: 346, y: controlsY, w: 38, h: 38 });
     }
     const eyebrowY = 83 + 16 * ratio;
     this.box(20, eyebrowY - 2, 22, 2, 1, C.coral);

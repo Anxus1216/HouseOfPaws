@@ -173,6 +173,39 @@ test('main actions stay reachable on a shorter portrait screen', async () => {
   }
 });
 
+test('header controls stay below the native WeChat menu on different screens', async () => {
+  const { default: Scene } = await import('../js/scene.js');
+  const { initialState, adopt } = await import('../js/model.js');
+  const context = new Proxy({}, { get: () => () => {} });
+  const state = initialState();
+  adopt(state, 'cat');
+  const ui = { page: 'home', expressionUntil: 0 };
+  for (const device of [
+    { width: 390, height: 844, safeTop: 0, menuTop: 12, menuBottom: 45 },
+    { width: 320, height: 568, safeTop: 17, menuTop: 12, menuBottom: 47 },
+    { width: 390, height: 680, safeTop: 0, menuTop: 50, menuBottom: 83 },
+  ]) {
+    globalThis.wx = {
+      getSystemInfoSync: () => ({ windowWidth: device.width, screenHeight: device.height,
+        safeArea: { top: device.safeTop, bottom: device.height } }),
+      getMenuButtonBoundingClientRect: () => ({ top: device.menuTop,
+        bottom: device.menuBottom, left: device.width - 118, right: device.width - 10 }),
+    };
+    const scene = new Scene(context, { width: device.width, height: device.height });
+    scene.draw(state, ui);
+    const button = scene.buttons.find(item => item.id === 'settings');
+    assert.ok(button, 'settings remains reachable');
+    const buttonTopPx = scene.offsetY + button.y * scene.scale;
+    assert.ok(buttonTopPx >= device.menuBottom + 10 - .01,
+      `${device.width}x${device.height}: settings clears the native menu`);
+    assert.equal(scene.hit(button.x + button.w / 2, button.y + button.h / 2), 'settings');
+  }
+  globalThis.wx = { getMenuButtonBoundingClientRect: () => ({ top: 0, bottom: 0 }) };
+  const fallback = new Scene(context, { width: 390, height: 680 });
+  fallback.draw(state, ui);
+  assert.equal(fallback.buttons.find(item => item.id === 'settings').y, 64);
+});
+
 test('growth and status bars stay inside the home status sheet on short and tall screens', async () => {
   const { default: Scene } = await import('../js/scene.js');
   const { initialState, adopt } = await import('../js/model.js');
