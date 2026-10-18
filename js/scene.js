@@ -19,6 +19,25 @@ const TASK_ART = {
 const CARE_SCENE = { wash: 'wash_nook', play: 'play_garden', rest: 'rest_evening' };
 const SCENE_NAMES = ['home_afternoon', 'wash_nook', 'play_garden', 'rest_evening', 'star_sky'];
 
+// The design scales from the compact screen height to the fully expanded layout.
+const COMPACT_LAYOUT_HEIGHT = 680;
+const EXPANDED_LAYOUT_HEIGHT = 844;
+// The welcome artwork extends below the home scene, with more space on taller screens.
+const WELCOME_MIN_EXTENSION = 70;
+const WELCOME_HEIGHT_EXTENSION_RATE = .25;
+// Collection rows grow in height and spacing as the layout ratio approaches one.
+const COLLECTION_ROW_BASE_HEIGHT = 135;
+const COLLECTION_ROW_EXTRA_HEIGHT = 25;
+const COLLECTION_ROW_BASE_GAP = 9;
+const COLLECTION_ROW_EXTRA_GAP = 2;
+// Animation clipping includes 5 units beyond each side of the 20..370 scene.
+const ANIMATION_CLIP_LEFT = 15;
+const ANIMATION_CLIP_WIDTH = 360;
+// Sprites can bob slightly above the scene, so retain this top margin.
+const ANIMATION_CLIP_TOP_MARGIN = 10;
+// Scene animation time is measured in seconds; Date.now() is in milliseconds.
+const MILLISECONDS_PER_SECOND = 1000;
+
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 
 export default class Scene {
@@ -26,7 +45,7 @@ export default class Scene {
     this.ctx = ctx;
     this.canvas = canvas;
     this.scale = 1;
-    this.h = 844;
+    this.h = EXPANDED_LAYOUT_HEIGHT;
     this.offsetX = 0;
     this.offsetY = 0;
     this.headerControlsY = 64;
@@ -48,7 +67,7 @@ export default class Scene {
     const right = viewport?.right ?? 0;
     const usable = this.canvas.height - top - bottom;
     const usableWidth = Math.max(1, this.canvas.width - left - right);
-    this.scale = Math.min(usableWidth / 390, usable / 680);
+    this.scale = Math.min(usableWidth / 390, usable / COMPACT_LAYOUT_HEIGHT);
     this.h = usable / this.scale;
     this.offsetX = left + (usableWidth - 390 * this.scale) / 2;
     this.offsetY = top;
@@ -184,8 +203,9 @@ export default class Scene {
   }
 
   layout() {
-    const ratio = clamp((this.h - 680) / 164, 0, 1);
-    const extra = Math.max(0, this.h - 844);
+    const ratio = clamp((this.h - COMPACT_LAYOUT_HEIGHT) /
+      (EXPANDED_LAYOUT_HEIGHT - COMPACT_LAYOUT_HEIGHT), 0, 1);
+    const extra = Math.max(0, this.h - EXPANDED_LAYOUT_HEIGHT);
     return { ratio, extra, sceneY: 136 + 33 * ratio,
       sceneH: 165 + 83 * ratio + extra, navY: this.h - 74 };
   }
@@ -451,8 +471,8 @@ export default class Scene {
   collection(state) {
     this.header(state, '小伙伴们', '每一位都值得被珍惜', '选择此刻想陪伴的伙伴');
     const { sceneY, ratio } = this.layout();
-    const rowH = 135 + 25 * ratio;
-    const gap = 9 + 2 * ratio;
+    const rowH = COLLECTION_ROW_BASE_HEIGHT + COLLECTION_ROW_EXTRA_HEIGHT * ratio;
+    const gap = COLLECTION_ROW_BASE_GAP + COLLECTION_ROW_EXTRA_GAP * ratio;
     SPECIES.forEach((spec, i) => {
       const y = sceneY + i * (rowH + gap);
       const owned = !!state.pets[spec.id];
@@ -481,7 +501,8 @@ export default class Scene {
   welcome(state, ui) {
     this.header(state, '欢迎来到小屋', '一起慢慢长大', '从第一位小伙伴开始', !!ui.debugEnabled);
     const { sceneY, sceneH } = this.layout();
-    const visualH = sceneH + Math.max(70, (this.h - 680) * .25);
+    const visualH = sceneH + Math.max(WELCOME_MIN_EXTENSION,
+      (this.h - COMPACT_LAYOUT_HEIGHT) * WELCOME_HEIGHT_EXTENSION_RATE);
     this.sceneBackdrop('home_afternoon', 20, sceneY, 350, visualH, 23, '#F2D8B8');
     this.box(20, sceneY, 350, visualH, 23, 'rgba(0,0,0,0)', C.coral, 1.5);
     const petSize = clamp(visualH / 300, .72, 1.08);
@@ -770,8 +791,42 @@ export default class Scene {
     this.text(ui.toast, 195, this.h - 227, 12, '#FFF', 'center');
   }
 
+  drawAnimation(state, ui) {
+    const { sceneY, sceneH, ratio } = this.layout();
+    let bottom = sceneY + sceneH;
+    if (!state.active) bottom += Math.max(WELCOME_MIN_EXTENSION,
+      (this.h - COMPACT_LAYOUT_HEIGHT) * WELCOME_HEIGHT_EXTENSION_RATE);
+    else if (ui.page === 'collection') bottom = sceneY + SPECIES.length *
+      (COLLECTION_ROW_BASE_HEIGHT + COLLECTION_ROW_EXTRA_HEIGHT * ratio) +
+      (SPECIES.length - 1) * (COLLECTION_ROW_BASE_GAP + COLLECTION_ROW_EXTRA_GAP * ratio);
+    else if (ui.page === 'game') bottom = this.gameField().bottom;
+
+    const c = this.ctx;
+    const buttons = this.buttons;
+    const clipY = sceneY - ANIMATION_CLIP_TOP_MARGIN;
+    const clipHeight = bottom - clipY;
+    this.time = Date.now() / MILLISECONDS_PER_SECOND;
+    c.save();
+    try {
+      c.setTransform(this.scale, 0, 0, this.scale, this.offsetX, this.offsetY);
+      c.beginPath(); c.rect(ANIMATION_CLIP_LEFT, clipY, ANIMATION_CLIP_WIDTH, clipHeight);
+      c.clip();
+      c.fillStyle = C.cream;
+      c.fillRect(ANIMATION_CLIP_LEFT, clipY, ANIMATION_CLIP_WIDTH, clipHeight);
+      this.buttons = [];
+      if (!state.active) this.welcome(state, ui);
+      else if (ui.page === 'collection') this.collection(state);
+      else if (ui.page === 'game') this.game(state, ui);
+      else this.home(state, ui);
+      this.toast(ui);
+    } finally {
+      this.buttons = buttons;
+      c.restore();
+    }
+  }
+
   draw(state, ui) {
-    this.resize(); this.time = Date.now() / 1000; this.buttons = [];
+    this.resize(); this.time = Date.now() / MILLISECONDS_PER_SECOND; this.buttons = [];
     const c = this.ctx;
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.fillStyle = C.cream; c.fillRect(0, 0, this.canvas.width, this.canvas.height);

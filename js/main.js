@@ -10,6 +10,8 @@ import { SPECIES, STORAGE_KEY, hydrate, adopt, care, daily, miniReward,
   MAX_DAILY_GROWTH } from './model.js';
 
 const STAT_LABELS = { hunger: '饱腹', clean: '清洁', happy: '快乐', energy: '精力' };
+// Idle pet scenes need fewer redraws; 50 ms gives them a 20 FPS cap.
+const PET_ANIMATION_INTERVAL_MS = 50;
 
 function growthFeedback(pet, earned, base, now) {
   const reason = earned < base && pet.level >= 99 ? '（已满级）' :
@@ -36,6 +38,7 @@ export default class Main {
     this.lastCareAt = 0;
     this.sounds = {};
     this.needsDraw = true;
+    this.lastAnimationDraw = 0;
     this.lastViewportCheck = Date.now();
     this.scene.onAssetReady = () => { this.needsDraw = true; };
     this.scene.preloadSceneImages();
@@ -287,7 +290,6 @@ export default class Main {
     const p = this.coords(event);
     if (p) {
       this.ui.basketX = Math.max(83, Math.min(307, p.x));
-      this.needsDraw = true;
     }
   }
 
@@ -489,8 +491,14 @@ export default class Main {
     }
     const wasAnimated = this.isAnimated();
     this.updateGame(dt);
-    if (this.visible && (this.needsDraw || wasAnimated || this.isAnimated())) {
-      this.scene.draw(this.state, this.ui);
+    const animated = wasAnimated || this.isAnimated();
+    const gameAnimating = this.ui.page === 'game' && this.ui.playing;
+    if (this.visible && (this.needsDraw ||
+        (animated && (gameAnimating ||
+          now - this.lastAnimationDraw >= PET_ANIMATION_INTERVAL_MS)))) {
+      if (this.needsDraw) this.scene.draw(this.state, this.ui);
+      else this.scene.drawAnimation(this.state, this.ui);
+      this.lastAnimationDraw = now;
       this.needsDraw = false;
     }
     if (now - this.lastSave > 30000) { this.lastSave = now; this.save(); }

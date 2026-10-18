@@ -125,7 +125,9 @@ test('game starts, adopts, navigates and renders each screen', async () => {
     'saving settles foreground time before advancing lastSeen');
 
   let draws = 0;
+  let animationDraws = 0;
   game.scene.draw = () => { draws++; };
+  game.scene.drawAnimation = () => { animationDraws++; };
   game.ui.page = 'tasks';
   game.ui.toast = '';
   game.needsDraw = true;
@@ -143,14 +145,32 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   game.loop();
   assert.equal(draws, 4, 'returning to the foreground redraws the page');
   game.ui.page = 'home';
+  game.lastAnimationDraw = 0;
   game.loop();
+  game.lastAnimationDraw = Date.now() + 1000;
   game.loop();
-  assert.equal(draws, 6, 'pet animation keeps drawing each frame');
+  assert.equal(draws, 4, 'pet animation does not repaint the full canvas');
+  assert.equal(animationDraws, 1, 'pet animation is paced below the display frame rate');
+  game.lastAnimationDraw = 0;
+  game.loop();
+  assert.equal(animationDraws, 2, 'pet animation still advances after its interval');
   game.ui.showSettings = true;
   game.needsDraw = true;
   game.loop();
   game.loop();
-  assert.equal(draws, 7, 'settings pause the covered pet animation');
+  assert.equal(draws, 5, 'settings get one full redraw');
+  assert.equal(animationDraws, 2, 'settings pause the covered pet animation');
+  game.ui.showSettings = false;
+  game.ui.page = 'game';
+  game.ui.playing = true;
+  game.ui.paused = false;
+  game.ui.remaining = 20;
+  game.ui.spawnTimer = 100;
+  game.ui.stars = [];
+  game.lastAnimationDraw = 0;
+  game.loop();
+  game.loop();
+  assert.equal(animationDraws, 4, 'active game animation keeps drawing every frame');
 });
 
 test('main actions stay reachable on a shorter portrait screen', async () => {
@@ -172,6 +192,35 @@ test('main actions stay reachable on a shorter portrait screen', async () => {
     for (const button of scene.buttons) {
       assert.ok(button.x >= 0 && button.x + button.w <= 390, `${page}:${button.id} fits width`);
       assert.ok(button.y >= 0 && button.y + button.h <= scene.h, `${page}:${button.id} fits height`);
+    }
+  }
+});
+
+test('animation redraw stays in the scene area and preserves touch targets', async () => {
+  const { default: Scene } = await import('../js/scene.js');
+  const { initialState, adopt } = await import('../js/model.js');
+  const rectangles = [];
+  const context = new Proxy({ rect: (...args) => rectangles.push(args) },
+    { get(target, key) { return target[key] || (() => {}); } });
+  const scene = new Scene(context, { width: 390, height: 844 });
+  const state = initialState();
+  const ui = { page: 'home', speech: '', expressionUntil: 0, action: '', statDelta: '' };
+  for (const height of [680, 844]) {
+    scene.canvas.height = height;
+    for (const page of ['home', 'collection', 'game']) {
+      if (page === 'collection' && !state.active) adopt(state, 'cat');
+      ui.page = page;
+      ui.playing = page === 'game';
+      ui.stars = [];
+      scene.draw(state, ui);
+      const targets = scene.buttons.map(button => ({ ...button }));
+      rectangles.length = 0;
+      scene.drawAnimation(state, ui);
+      assert.deepEqual(scene.buttons, targets, `${page} keeps touch targets at ${height}px`);
+      assert.equal(rectangles.length, 1, `${page} clips one animated area`);
+      const [x, y, width, clipHeight] = rectangles[0];
+      assert.ok(x > 0 && width < 390 && y > 0 && clipHeight < scene.h,
+        `${page} avoids a full-canvas repaint at ${height}px`);
     }
   }
 });
