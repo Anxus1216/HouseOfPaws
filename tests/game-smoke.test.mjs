@@ -227,6 +227,62 @@ test('generated pet sprites load by character and state', async () => {
   assert.equal(drawn.length, 3);
 });
 
+test('approved scene backgrounds load once, crop to cover, and request a redraw', async () => {
+  const { default: Scene } = await import('../js/scene.js');
+  const requested = [], drawn = [];
+  const image = { width: 960, height: 720,
+    set src(value) { requested.push(value); } };
+  const context = new Proxy({ drawImage: (...args) => drawn.push(args) },
+    { get(target, key) { return target[key] || (() => {}); } });
+  const scene = new Scene(context, { width: 390, height: 844, createImage: () => image });
+  let invalidations = 0;
+  scene.onAssetReady = () => { invalidations++; };
+  assert.equal(scene.sceneBackdrop('home_afternoon', 35, 150, 320, 160, 20, '#fff'), false);
+  assert.deepEqual(requested, ['assets/scenes/scene_home_afternoon.jpg']);
+  image.onload();
+  assert.equal(invalidations, 1);
+  assert.equal(scene.sceneBackdrop('home_afternoon', 35, 150, 320, 160, 20, '#fff'), true);
+  assert.deepEqual(drawn[0].slice(1), [0, 120, 960, 480, 35, 150, 320, 160]);
+  assert.equal(requested.length, 1, 'loaded background is cached');
+});
+
+test('short game field keeps the moon near the top of the night scene', async () => {
+  const { default: Scene } = await import('../js/scene.js');
+  const image = { width: 941, height: 1672, set src(value) { this.path = value; } };
+  let crop;
+  const context = new Proxy({ drawImage: (...args) => { crop = args; } },
+    { get(target, key) { return target[key] || (() => {}); } });
+  const scene = new Scene(context, { width: 390, height: 680, createImage: () => image });
+  scene.sceneBackdrop('star_sky', 36, 153, 318, 360, 21, '#174768', .12);
+  image.onload();
+  scene.sceneBackdrop('star_sky', 36, 153, 318, 360, 21, '#174768', .12);
+  assert.equal(image.path, 'assets/scenes/scene_star_sky.jpg');
+  assert.ok(crop[2] < 100, 'the source crop begins high enough to include the moon');
+  assert.deepEqual(crop.slice(5), [36, 153, 318, 360]);
+});
+
+test('care actions and the star game select their matching backgrounds', async () => {
+  const { default: Scene } = await import('../js/scene.js');
+  const { initialState, adopt } = await import('../js/model.js');
+  const context = new Proxy({}, { get: () => () => {} });
+  const scene = new Scene(context, { width: 390, height: 844 });
+  const state = initialState();
+  adopt(state, 'cat');
+  const names = [];
+  scene.sceneBackdrop = name => { names.push(name); return true; };
+  scene.pet = () => {};
+  const ui = { action: '', expression: 'normal', expressionUntil: 0 };
+  for (const [action, expected] of [['', 'home_afternoon'], ['feed', 'home_afternoon'],
+    ['wash', 'wash_nook'], ['play', 'play_garden'], ['rest', 'rest_evening']]) {
+    ui.action = action;
+    ui.expressionUntil = action ? Date.now() + 3000 : 0;
+    scene.home(state, ui);
+    assert.equal(names.at(-1), expected, `${action || 'idle'} background`);
+  }
+  scene.game(state, { playing: false });
+  assert.equal(names.at(-1), 'star_sky');
+});
+
 test('pet expression, action and bubble switch together when feedback ends', async () => {
   const { petDisplay, ACTION_SPEECH, FEEDBACK_MS } = await import('../js/pet-display.js');
   const pet = { hunger: 10, clean: 80, happy: 80, energy: 75 };

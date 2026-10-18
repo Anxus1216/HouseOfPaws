@@ -21,3 +21,17 @@ test('all selected gouache sources have packaged RGBA sprites', () => {
     }
   }
 });
+
+test('all approved scene backgrounds are packaged as compact JPEG assets', () => {
+  const scenes = ['home_afternoon', 'wash_nook', 'play_garden', 'rest_evening', 'star_sky'];
+  let totalBytes = 0;
+  for (const name of scenes) {
+    const path = fileURLToPath(new URL(`../assets/scenes/scene_${name}.jpg`, import.meta.url));
+    const bytes = readFileSync(path);
+    assert.equal(bytes[0], 0xff, `${name} JPEG marker`);
+    assert.equal(bytes[1], 0xd8, `${name} JPEG marker`);
+    assert.ok(bytes.length < 256 * 1024, `${name} remains suitable for the game package`);
+    totalBytes += bytes.length;
+  }
+  assert.ok(totalBytes < 1024 * 1024, 'scene set stays under 1 MiB');
+});

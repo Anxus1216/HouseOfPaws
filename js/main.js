@@ -29,6 +29,7 @@ export default class Main {
     this.lastCareAt = 0;
     this.sounds = {};
     this.needsDraw = true;
+    this.scene.onAssetReady = () => { this.needsDraw = true; };
     this.visible = true;
     wx.onTouchStart(event => this.touch(event));
     wx.onTouchMove(event => this.move(event));

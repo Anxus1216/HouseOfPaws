@@ -13,6 +13,8 @@ const TASK_ART = {
   game: { title: '星星收集家', mark: '✦', color: '#FFF0D4' },
 };
 
+const CARE_SCENE = { wash: 'wash_nook', play: 'play_garden', rest: 'rest_evening' };
+
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 
 export default class Scene {
@@ -26,6 +28,7 @@ export default class Scene {
     this.buttons = [];
     this.time = 0;
     this.petImages = new Map();
+    this.sceneImages = new Map();
   }
 
   resize() {
@@ -46,15 +49,61 @@ export default class Scene {
     this.offsetY = top;
   }
 
-  box(x, y, w, h, r, fill, stroke, line = 1) {
+  roundedPath(x, y, w, h, r) {
     const c = this.ctx, radius = Math.min(r, w / 2, h / 2);
     c.beginPath(); c.moveTo(x + radius, y);
     c.lineTo(x + w - radius, y); c.quadraticCurveTo(x + w, y, x + w, y + radius);
     c.lineTo(x + w, y + h - radius); c.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
     c.lineTo(x + radius, y + h); c.quadraticCurveTo(x, y + h, x, y + h - radius);
     c.lineTo(x, y + radius); c.quadraticCurveTo(x, y, x + radius, y); c.closePath();
+  }
+
+  box(x, y, w, h, r, fill, stroke, line = 1) {
+    const c = this.ctx;
+    this.roundedPath(x, y, w, h, r);
     c.fillStyle = fill; c.fill();
     if (stroke) { c.strokeStyle = stroke; c.lineWidth = line; c.stroke(); }
+  }
+
+  sceneBackdrop(name, x, y, w, h, radius, fallback, focusY = .5) {
+    this.box(x, y, w, h, radius, fallback);
+    let entry = this.sceneImages.get(name);
+    if (!entry) {
+      const createImage = this.canvas.createImage ? () => this.canvas.createImage() :
+        typeof wx !== 'undefined' && wx.createImage ? () => wx.createImage() : null;
+      if (!createImage) return false;
+      try {
+        const image = createImage();
+        entry = { image, ready: false, failed: false };
+        this.sceneImages.set(name, entry);
+        image.onload = () => {
+          entry.ready = true;
+          if (this.onAssetReady) this.onAssetReady();
+        };
+        image.onerror = () => { entry.failed = true; };
+        image.src = `assets/scenes/scene_${name}.jpg`;
+      } catch (error) {
+        this.sceneImages.delete(name);
+        return false;
+      }
+    }
+    const image = entry.image;
+    if (!entry.ready || entry.failed || !image.width || !image.height) return false;
+    const scale = Math.max(w / image.width, h / image.height);
+    const sourceW = w / scale, sourceH = h / scale;
+    const sourceX = (image.width - sourceW) / 2;
+    const sourceY = (image.height - sourceH) * focusY;
+    const c = this.ctx;
+    c.save();
+    try {
+      this.roundedPath(x, y, w, h, radius);
+      c.clip();
+      c.drawImage(image, sourceX, sourceY, sourceW, sourceH, x, y, w, h);
+    } catch (error) {
+      entry.failed = true;
+      return false;
+    } finally { c.restore(); }
+    return true;
   }
 
   text(value, x, y, size = 14, color = C.ink, align = 'left', weight = 'normal') {
@@ -283,21 +332,10 @@ export default class Scene {
     // Reserve space below the room for the daily growth label and both stat rows.
     const roomH = Math.max(162, cardBottom - roomY - 143);
     this.box(20, 132, 350, cardBottom - 132, 25, C.paper, C.line, 1.3);
-    // The room is a little paper theatre: a window, wall trim and rug frame the pet.
-    this.box(35, roomY, 320, roomH, 20, '#F7E8D5');
-    this.box(35, roomY + roomH * .69, 320, roomH * .31, 0, '#E7CAB0');
-    this.line([[36, roomY + roomH * .69], [354, roomY + roomH * .69]], '#D5AE91', 2);
-    this.box(53, roomY + 14, 75, Math.min(78, roomH * .45), 23, '#FFF8E9', '#DDBCA1', 3);
-    this.circle(91, roomY + 47, 20, '#F7D98E');
-    this.line([[91, roomY + 17], [91, roomY + Math.min(78, roomH * .45) + 12]], '#E8C6A5', 2);
-    this.ellipse(299, roomY + 42, 17, 19, '#E6A58E');
-    this.ellipse(285, roomY + 55, 5, 13, C.mint, -.6);
-    this.ellipse(312, roomY + 55, 5, 13, C.mint, .6);
-    this.box(281, roomY + 64, 38, 8, 3, '#A8755D');
-    this.ellipse(195, roomY + roomH - 13, 103, 18, '#DABFA9');
-    this.ellipse(195, roomY + roomH - 16, 89, 12, '#F3DECA');
-    const petSize = clamp(roomH / 345, .54, .88);
     const display = petDisplay(pet, ui);
+    const backdrop = CARE_SCENE[display.action] || 'home_afternoon';
+    this.sceneBackdrop(backdrop, 35, roomY, 320, roomH, 20, '#F7E8D5');
+    const petSize = clamp(roomH / 345, .54, .88);
     this.pet(pet.id, 195, roomY + roomH - petSize * 107 - 10, petSize, this.time,
       display.expression, display.action);
     this.buttons.push({ id: 'pet_tap', x: 94, y: roomY + 5, w: 204, h: roomH - 12 });
@@ -441,14 +479,7 @@ export default class Scene {
     this.header(state, '星星接接乐', '把闪亮的星星装进小篮子');
     this.box(20, 132, 350, this.h - 235, 25, C.paper, C.line, 1.3);
     const fieldY = 153, fieldH = this.h - 320;
-    this.box(36, fieldY, 318, fieldH, 21, '#42645F');
-    this.circle(86, fieldY + 93, 42, '#55766B');
-    this.circle(301, fieldY + 167, 54, '#4C6D66');
-    this.circle(285, fieldY + 70, 23, '#F9E8BA');
-    for (const [x, y, size] of [[75, 49, 11], [155, 91, 7], [220, 44, 8],
-      [315, 122, 7], [113, 171, 7], [246, 208, 10]]) {
-      if (y < fieldH - 34) this.text('✦', x, fieldY + y, size, '#EECF87', 'center');
-    }
+    this.sceneBackdrop('star_sky', 36, fieldY, 318, fieldH, 21, '#174768', .12);
     if (ui.playing) {
       this.box(49, fieldY + 11, 235, 40, 20, '#F8F0DC');
       this.text('✦  ' + ui.score, 66, fieldY + 32, 17, C.ink, 'left', 'bold');
