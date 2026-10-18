@@ -2,6 +2,7 @@ import { SPECIES, TASKS, canDaily, getDailyGrowth, MAX_DAILY_GROWTH } from './mo
 import { petDisplay } from './pet-display.js';
 import { PET_FIELDS } from './debug-editor.js';
 import { readViewport } from './viewport.js';
+import { logInfo, logWarn, logError } from './logger.js';
 
 const C = {
   ink: '#5A3F2E', muted: '#9A806B', paper: '#FFF3E2', cream: '#FFF3E2',
@@ -99,19 +100,35 @@ export default class Scene {
     if (!entry) {
       const createImage = this.canvas.createImage ? () => this.canvas.createImage() :
         typeof wx !== 'undefined' && wx.createImage ? () => wx.createImage() : null;
-      if (!createImage) return null;
+      if (!createImage) {
+        if (!this.sceneImageApiUnavailable) {
+          this.sceneImageApiUnavailable = true;
+          logWarn('scene.image_api_unavailable');
+        }
+        return null;
+      }
       try {
         const image = createImage();
         entry = { image, ready: false, failed: false };
         this.sceneImages.set(name, entry);
         image.onload = () => {
           entry.ready = true;
+          logInfo('scene.image_ready', { name, width: image.width, height: image.height });
           if (this.onAssetReady) this.onAssetReady();
         };
-        image.onerror = () => { entry.failed = true; if (this.onAssetReady) this.onAssetReady(); };
+        image.onerror = error => {
+          entry.failed = true;
+          logError('scene.image_load_failed', { name, message: String(error) });
+          if (this.onAssetReady) this.onAssetReady();
+        };
         image.src = `assets/scenes/scene_${name}.jpg`;
       } catch (error) {
         this.sceneImages.delete(name);
+        if (!this.failedSceneCreations) this.failedSceneCreations = new Set();
+        if (!this.failedSceneCreations.has(name)) {
+          this.failedSceneCreations.add(name);
+          logError('scene.image_create_failed', { name, message: String(error) });
+        }
         return null;
       }
     }
@@ -140,6 +157,7 @@ export default class Scene {
       c.drawImage(image, sourceX, sourceY, sourceW, sourceH, x, y, w, h);
     } catch (error) {
       entry.failed = true;
+      logError('scene.image_draw_failed', { name, message: String(error) });
       return false;
     } finally { c.restore(); }
     return true;
@@ -266,16 +284,34 @@ export default class Scene {
     if (!entry) {
       const createImage = this.canvas.createImage ? () => this.canvas.createImage() :
         typeof wx !== 'undefined' && wx.createImage ? () => wx.createImage() : null;
-      if (!createImage) return false;
+      if (!createImage) {
+        if (!this.petImageApiUnavailable) {
+          this.petImageApiUnavailable = true;
+          logWarn('pet.image_api_unavailable');
+        }
+        return false;
+      }
       try {
         const image = createImage();
         entry = { image, ready: false, failed: false };
         this.petImages.set(key, entry);
-        image.onload = () => { entry.ready = true; if (this.onAssetReady) this.onAssetReady(); };
-        image.onerror = () => { entry.failed = true; };
+        image.onload = () => {
+          entry.ready = true;
+          logInfo('pet.image_ready', { key, width: image.width, height: image.height });
+          if (this.onAssetReady) this.onAssetReady();
+        };
+        image.onerror = error => {
+          entry.failed = true;
+          logError('pet.image_load_failed', { key, message: String(error) });
+        };
         image.src = `assets/pets/sprites/pet_${key}.png`;
       } catch (error) {
         this.petImages.delete(key);
+        if (!this.failedPetCreations) this.failedPetCreations = new Set();
+        if (!this.failedPetCreations.has(key)) {
+          this.failedPetCreations.add(key);
+          logError('pet.image_create_failed', { key, message: String(error) });
+        }
         return false;
       }
     }
@@ -286,6 +322,7 @@ export default class Scene {
       this.ctx.drawImage(entry.image, x - side / 2, y - 170 * size + bob, side, side);
     } catch (error) {
       entry.failed = true;
+      logError('pet.image_draw_failed', { key, message: String(error) });
       return false;
     }
     return true;

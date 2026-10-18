@@ -5,9 +5,10 @@ import { ACTION_SPEECH, FEEDBACK_MS } from './pet-display.js';
 import { DEBUG_ENABLED } from './debug-config.generated.js';
 import { createDebugDraft, draftChanged, commitDebugDraft, PET_FIELDS } from './debug-editor.js';
 import { readViewport, sameViewport } from './viewport.js';
+import { logInfo, logWarn, logError } from './logger.js';
 import { SPECIES, STORAGE_KEY, hydrate, adopt, care, daily, miniReward,
   ensureTasks, recordTask, claimTask, settleTime, getDailyGrowth,
-  MAX_DAILY_GROWTH } from './model.js';
+  MAX_DAILY_GROWTH, SAVE_VERSION, TASKS } from './model.js';
 
 const STAT_LABELS = { hunger: '饱腹', clean: '清洁', happy: '快乐', energy: '精力' };
 // Idle pet scenes need fewer redraws; 50 ms gives them a 20 FPS cap.
@@ -47,10 +48,11 @@ export default class Main {
     wx.onTouchMove(event => this.move(event));
     if (wx.onTouchEnd) wx.onTouchEnd(event => this.touchEnd(event));
     try { if (wx.onWindowResize) wx.onWindowResize(() => this.syncViewport()); }
-    catch (error) { /* The foreground check also handles window changes. */ }
+    catch (error) { logWarn('viewport.resize_listener_failed', { message: String(error) }); }
     if (wx.onHide) wx.onHide(() => {
       this.visible = false;
       if (this.ui.playing) this.ui.paused = true;
+      logInfo('app.hidden', { gamePaused: this.ui.playing });
       this.save();
     });
     if (wx.onShow) wx.onShow(() => {
@@ -60,6 +62,7 @@ export default class Main {
       this.lastFrame = Date.now();
       this.visible = true;
       this.needsDraw = true;
+      logInfo('app.shown', { gamePaused: this.ui.playing && this.ui.paused });
       this.save();
     });
     this.loop = this.loop.bind(this);
@@ -91,6 +94,9 @@ export default class Main {
     GameGlobal.viewport = viewport;
     this.scene.setViewport(viewport);
     this.scene.resize();
+    logInfo('viewport.changed', { width: viewport.width, height: viewport.height,
+      top: viewport.top, bottom: viewport.bottom, left: viewport.left, right: viewport.right,
+      gamePaused: this.ui.playing && this.ui.paused });
     if (oldField) {
       const newField = this.scene.gameField();
       this.ui.stars.forEach(star => {
@@ -104,14 +110,28 @@ export default class Main {
   }
 
   load() {
-    try { return hydrate(wx.getStorageSync(STORAGE_KEY), Date.now()); }
-    catch (e) { return hydrate(null, Date.now()); }
+    try {
+      const raw = wx.getStorageSync(STORAGE_KEY);
+      const state = hydrate(raw, Date.now());
+      const source = raw == null || raw === '' ? 'new' :
+        raw && typeof raw === 'object' && !Array.isArray(raw) ? 'stored' : 'invalid';
+      logInfo('save.loaded', { source, version: raw?.version ?? null,
+        migrated: source === 'stored' && raw.version !== SAVE_VERSION,
+        pets: Object.keys(state.pets).length });
+      return state;
+    } catch (error) {
+      logError('save.load_failed', { message: String(error) });
+      return hydrate(null, Date.now());
+    }
   }
 
   save() {
     settleTime(this.state, Date.now());
     try { wx.setStorageSync(STORAGE_KEY, this.state); }
-    catch (e) { this.notice('本机存档暂时不可用'); }
+    catch (error) {
+      logError('save.write_failed', { message: String(error) });
+      this.notice('本机存档暂时不可用');
+    }
   }
 
   notice(message) {
@@ -132,7 +152,9 @@ export default class Main {
       }
       if (existing) this.sounds[name].stop();
       this.sounds[name].play();
-    } catch (error) { /* Audio is optional; gameplay must continue. */ }
+    } catch (error) {
+      logWarn('audio.play_failed', { name, message: String(error) });
+    }
   }
 
   coords(event) {
@@ -179,10 +201,19 @@ export default class Main {
       this.ui.showSettings = true;
       return;
     }
-    if (id === 'pause_game' && this.ui.playing) { this.ui.paused = true; return; }
-    if (id === 'resume_game' && this.ui.playing) { this.ui.paused = false; this.lastFrame = Date.now(); return; }
+    if (id === 'pause_game' && this.ui.playing) {
+      this.ui.paused = true;
+      logInfo('game.paused', { reason: 'button', remaining: this.ui.remaining });
+      return;
+    }
+    if (id === 'resume_game' && this.ui.playing) {
+      this.ui.paused = false; this.lastFrame = Date.now();
+      logInfo('game.resumed', { remaining: this.ui.remaining });
+      return;
+    }
     if (id === 'quit_game' && this.ui.playing) {
       this.ui.playing = false; this.ui.paused = false; this.ui.gameResult = '本局已结束，随时再来接星星';
+      logInfo('game.quit', { score: this.ui.score, remaining: this.ui.remaining });
       return;
     }
     if (this.ui.playing && this.ui.page === 'game' && !this.ui.paused && !id) {
@@ -207,6 +238,7 @@ export default class Main {
     if (id === 'adopt_selected' || id.startsWith('adopt_')) {
       const speciesId = id === 'adopt_selected' ? 'cat' : id.slice(6);
       if (adopt(this.state, speciesId)) {
+        logInfo('pet.adopted', { species: speciesId, coins: this.state.coins });
         this.ui.page = 'home'; this.ui.speech = '终于见到你啦！';
         this.ui.expression = 'happy'; this.ui.expressionUntil = Date.now() + FEEDBACK_MS.tap;
         this.ui.action = ''; this.ui.statDelta = '';
@@ -214,23 +246,40 @@ export default class Main {
       } else {
         const species = SPECIES.find(item => item.id === speciesId);
         const missing = Math.max(0, (species && species.cost || 0) - this.state.coins);
+        logInfo('pet.adoption_rejected', { species: speciesId,
+          reason: this.state.pets[speciesId] ? 'already_owned' :
+            missing ? 'insufficient_coins' : 'invalid_species', missing });
         this.notice(missing ? `还差 ${missing} 爪爪币，玩游戏可以赚取` : '这位伙伴已经在小屋里啦');
       }
       return;
     }
     if (id.startsWith('select_')) {
       this.state.active = id.slice(7);
+      logInfo('pet.selected', { species: this.state.active });
       this.ui.page = 'home'; this.ui.speech = ''; this.ui.expressionUntil = 0;
       this.ui.action = ''; this.ui.statDelta = '';
       this.save(); return;
     }
     if (id === 'daily') {
-      if (daily(this.state)) { this.notice('领取成功：+30 爪爪币'); this.save(); }
-      else this.notice('今天已经领取过啦，明天再来吧');
+      if (daily(this.state)) {
+        logInfo('reward.daily_claimed', { coins: 30, balance: this.state.coins });
+        this.notice('领取成功：+30 爪爪币'); this.save();
+      } else {
+        logInfo('reward.daily_rejected', { reason: this.state.coins > 999999 - 30 ?
+          'wallet_full' : 'already_claimed' });
+        this.notice('今天已经领取过啦，明天再来吧');
+      }
       return;
     }
     if (id.startsWith('claim_')) {
-      const result = claimTask(this.state, id.slice(6));
+      const taskId = id.slice(6);
+      const result = claimTask(this.state, taskId);
+      const task = TASKS.find(item => item.id === taskId);
+      const reason = result?.reward ? undefined : !task ? 'invalid_task' :
+        this.state.tasks.claimed[taskId] ? 'already_claimed' :
+          this.state.tasks.progress[taskId] < task.target ? 'incomplete' : 'wallet_full';
+      logInfo(result?.reward ? 'reward.task_claimed' : 'reward.task_rejected',
+        { task: taskId, reward: result?.reward ?? 0, reason });
       this.notice(result && result.reward ? `任务完成：+${result.reward} 爪爪币` : '先完成任务再来领取吧');
       if (result && result.reward) { this.playSound('care'); this.save(); }
       return;
@@ -250,6 +299,9 @@ export default class Main {
       const before = pet && { hunger: pet.hunger, clean: pet.clean, happy: pet.happy, energy: pet.energy };
       const result = care(this.state, id, now);
       if (result) {
+        logInfo(result.error ? 'care.rejected' : 'care.completed',
+          { action: id, pet: this.state.active, reason: result.error || undefined,
+            xp: result.xp ?? 0, leveled: !!result.leveled });
         this.notice(result.error || result.label);
         if (!result.error) {
           this.lastCareAt = now;
@@ -310,6 +362,7 @@ export default class Main {
     this.ui.debugDraft = createDebugDraft(this.state, Date.now());
     this.ui.debugEditor = { scroll: 0, maxScroll: 0, errors: {}, message: '', confirmDiscard: false };
     this.ui.debugKeyboard = null;
+    logInfo('debug.opened', { pet: this.state.active });
     this.needsDraw = true;
   }
 
@@ -371,6 +424,8 @@ export default class Main {
       const result = commitDebugDraft(this.state, draft, now,
         candidate => wx.setStorageSync(STORAGE_KEY, candidate), ui.debugEnabled);
       if (result.state) {
+        logInfo('debug.saved', { fields: Object.keys(draft.values).filter(key =>
+          draft.values[key] !== draft.original[key]) });
         this.state = result.state;
         this.lastSave = now;
         this.lastFrame = now;
@@ -379,11 +434,14 @@ export default class Main {
         this.closeDebugEditor(false);
         this.notice('调试数据已保存');
       } else if (result.reason === 'date_changed' || result.reason === 'pet_changed') {
+        logWarn('debug.save_rejected', { reason: result.reason });
         ui.debugDraft = createDebugDraft(this.state, now);
         editor.errors = {};
         editor.scroll = 0;
         editor.message = result.error;
       } else {
+        (result.reason === 'invalid' ? logInfo : logWarn)('debug.save_rejected', { reason: result.reason,
+          fields: Object.keys(result.errors || {}) });
         editor.errors = result.errors || {};
         editor.message = result.error;
       }
@@ -415,6 +473,7 @@ export default class Main {
     this.ui.basketX = 195;
     this.ui.gameResult = '';
     this.ui.gameGrowth = '';
+    logInfo('game.started', { pet: this.state.active });
   }
 
   updateGame(dt) {
@@ -451,6 +510,8 @@ export default class Main {
       ui.remaining = 0;
       const now = Date.now();
       const reward = miniReward(this.state, ui.score, now);
+      logInfo('game.completed', { pet: this.state.active, score: ui.score,
+        coins: reward.coins, xp: reward.xp, leveled: reward.leveled });
       recordTask(this.state, 'game');
       if (reward.leveled) this.playSound('level');
       ui.gameResult = `接到 ${ui.score} 颗星星 · 获得 ${reward.coins} 爪爪币`;
@@ -487,7 +548,10 @@ export default class Main {
     if (this.state.tasks && this.state.tasks.date !== undefined) {
       const previousTasks = this.state.tasks;
       ensureTasks(this.state, now);
-      if (this.state.tasks !== previousTasks) this.needsDraw = true;
+      if (this.state.tasks !== previousTasks) {
+        logInfo('tasks.reset', { date: this.state.tasks.date });
+        this.needsDraw = true;
+      }
     }
     const wasAnimated = this.isAnimated();
     this.updateGame(dt);
