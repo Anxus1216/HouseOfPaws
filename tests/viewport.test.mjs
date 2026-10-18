@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readViewport } from '../js/viewport.js';
+import { readViewport, sameViewport } from '../js/viewport.js';
 import Scene from '../js/scene.js';
 import { initialState, adopt } from '../js/model.js';
 
@@ -10,8 +10,35 @@ test('safe area and capsule are converted from screen to window coordinates', ()
       screenTop: 44, safeArea: { top: 44, bottom: 810 } }),
     getMenuButtonBoundingClientRect: () => ({ top: 52, bottom: 84 }),
   });
-  assert.deepEqual(viewport, { width: 390, height: 760, top: 0, bottom: 0,
+  assert.deepEqual(viewport, { width: 390, height: 760, top: 0, bottom: 0, left: 0, right: 0,
     menuBottom: 40 });
+});
+
+test('asymmetric side insets keep every main control inside the horizontal safe area', () => {
+  const viewport = readViewport({ getWindowInfo: () => ({
+    windowWidth: 390, windowHeight: 844, screenWidth: 390, screenHeight: 844,
+    screenTop: 0, safeArea: { left: 32, right: 378, top: 0, bottom: 810 },
+  }) });
+  assert.equal(viewport.left, 32);
+  assert.equal(viewport.right, 12);
+  assert.equal(sameViewport(viewport, { ...viewport, left: 31 }), false);
+  const context = new Proxy({}, { get: () => () => {} });
+  const scene = new Scene(context, { width: 390, height: 844 });
+  scene.setViewport(viewport);
+  const state = initialState();
+  adopt(state, 'cat');
+  const ui = { page: 'home', expressionUntil: 0 };
+  for (const page of ['home', 'collection', 'tasks', 'game']) {
+    ui.page = page;
+    scene.draw(state, ui);
+    for (const button of scene.buttons) {
+      const left = scene.offsetX + button.x * scene.scale;
+      const right = scene.offsetX + (button.x + button.w) * scene.scale;
+      assert.ok(left >= viewport.left, `${page}:${button.id} clears left inset`);
+      assert.ok(right <= viewport.width - viewport.right,
+        `${page}:${button.id} clears right inset`);
+    }
+  }
 });
 
 test('missing or malformed safe area reserves a bottom margin', () => {
@@ -133,6 +160,21 @@ test('runtime window and safe-area changes redraw before accepting touch', async
   game.scene.draw(game.state, game.ui);
   const nav = game.scene.buttons.find(button => button.id === 'nav_home');
   assert.ok(game.scene.offsetY + (nav.y + nav.h) * game.scene.scale <= 528);
+  tap('nav_tasks');
+  assert.equal(game.ui.page, 'tasks');
+
+  // A side inset can change without resizing the Canvas or changing vertical bounds.
+  metrics = { ...metrics, screenWidth: 320,
+    safeArea: { left: 18, right: 310, top: 26, bottom: 528 } };
+  game.syncViewport();
+  assert.equal(canvas.width, originalCanvasWidth);
+  assert.equal(game.viewport.left, 18);
+  assert.equal(game.viewport.right, 10);
+  assert.ok(game.scene.offsetX >= game.viewport.left);
+  assert.ok(game.scene.offsetX + 390 * game.scene.scale <=
+    game.viewport.width - game.viewport.right);
+  tap('nav_home');
+  assert.equal(game.ui.page, 'home');
   tap('nav_tasks');
   assert.equal(game.ui.page, 'tasks');
 

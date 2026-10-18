@@ -4,13 +4,18 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const validArea = (area, screenHeight) => area && validInset(area.top) &&
   validInset(area.bottom) && area.bottom > area.top &&
   (!screenHeight || area.bottom <= screenHeight);
+const validHorizontalArea = (area, screenWidth) => area && validInset(area.left) &&
+  validInset(area.right) && area.right > area.left &&
+  (!screenWidth || area.right <= screenWidth);
 
 export function readViewport(api, canvas = {}) {
   let current = null;
   let legacy = null;
   try { if (api.getWindowInfo) current = api.getWindowInfo(); } catch (error) { /* Use legacy info. */ }
   if (!current || !validSize(current.windowWidth) || !validSize(current.windowHeight) ||
-      !validArea(current.safeArea, current.screenHeight) || !validInset(current.screenTop)) {
+      !validArea(current.safeArea, current.screenHeight) ||
+      !validHorizontalArea(current.safeArea, current.screenWidth) ||
+      !validInset(current.screenTop)) {
     try { if (api.getSystemInfoSync) legacy = api.getSystemInfoSync(); }
     catch (error) { /* Keep the available window data. */ }
   }
@@ -28,6 +33,16 @@ export function readViewport(api, canvas = {}) {
   const screenHeight = [current?.screenHeight, legacy?.screenHeight].find(validSize);
   const area = validArea(current?.safeArea, screenHeight) ? current.safeArea :
     validArea(legacy?.safeArea, screenHeight) ? legacy.safeArea : null;
+  const screenWidth = [current?.screenWidth, legacy?.screenWidth, width].find(validSize);
+  const horizontalArea = validHorizontalArea(current?.safeArea, screenWidth) ? current.safeArea :
+    validHorizontalArea(legacy?.safeArea, screenWidth) ? legacy.safeArea : null;
+  let left = 0, right = 0;
+  if (horizontalArea) {
+    // Horizontal window origin is not exposed. Reserve the full screen edge insets.
+    left = clamp(horizontalArea.left, 0, width);
+    right = clamp(screenWidth - horizontalArea.right, 0, width);
+    if (left + right >= width) { left = 0; right = 0; }
+  }
   let top, bottom;
   if (area) {
     // safeArea is screen-relative; Canvas and touch events use window coordinates.
@@ -53,10 +68,10 @@ export function readViewport(api, canvas = {}) {
       menuBottom = menu.bottom - (screenTop ?? 0);
     }
   } catch (error) { /* The capsule geometry is optional. */ }
-  return { width, height, top, bottom, menuBottom };
+  return { width, height, top, bottom, left, right, menuBottom };
 }
 
 export function sameViewport(a, b) {
-  return !!a && !!b && ['width', 'height', 'top', 'bottom', 'menuBottom']
+  return !!a && !!b && ['width', 'height', 'top', 'bottom', 'left', 'right', 'menuBottom']
     .every(key => a[key] === b[key]);
 }

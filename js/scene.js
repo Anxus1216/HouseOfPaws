@@ -40,14 +40,17 @@ export default class Scene {
   setViewport(viewport) { this.viewport = viewport; }
 
   resize() {
-    // All pages share a 390-unit width. Height follows the visible safe area.
+    // Fit the 390-unit layout inside the visible safe rectangle.
     const viewport = this.viewport || readViewport(typeof wx === 'undefined' ? {} : wx, this.canvas);
     const top = viewport?.top ?? 0;
     const bottom = viewport?.bottom ?? 0;
+    const left = viewport?.left ?? 0;
+    const right = viewport?.right ?? 0;
     const usable = this.canvas.height - top - bottom;
-    this.scale = Math.min(this.canvas.width / 390, usable / 680);
+    const usableWidth = Math.max(1, this.canvas.width - left - right);
+    this.scale = Math.min(usableWidth / 390, usable / 680);
     this.h = usable / this.scale;
-    this.offsetX = (this.canvas.width - 390 * this.scale) / 2;
+    this.offsetX = left + (usableWidth - 390 * this.scale) / 2;
     this.offsetY = top;
     this.headerControlsY = 64;
     if (viewport && Number.isFinite(viewport.menuBottom)) {

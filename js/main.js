@@ -70,7 +70,8 @@ export default class Main {
     const resized = !this.viewport || viewport.width !== this.viewport.width ||
       viewport.height !== this.viewport.height;
     const fieldChanged = resized || viewport.top !== this.viewport.top ||
-      viewport.bottom !== this.viewport.bottom;
+      viewport.bottom !== this.viewport.bottom || viewport.left !== this.viewport.left ||
+      viewport.right !== this.viewport.right;
     this.viewportFieldChanged = fieldChanged;
     const oldField = this.ui.playing && fieldChanged ? this.scene.gameField() : null;
     if (fieldChanged) {
