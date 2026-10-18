@@ -1,6 +1,7 @@
 import { SPECIES, TASKS, canDaily, getDailyGrowth, MAX_DAILY_GROWTH } from './model.js';
 import { petDisplay } from './pet-display.js';
 import { PET_FIELDS } from './debug-editor.js';
+import { readViewport } from './viewport.js';
 
 const C = {
   ink: '#5A3F2E', muted: '#9A806B', paper: '#FFF3E2', cream: '#FFF3E2',
@@ -33,36 +34,26 @@ export default class Scene {
     this.time = 0;
     this.petImages = new Map();
     this.sceneImages = new Map();
+    this.viewport = null;
   }
+
+  setViewport(viewport) { this.viewport = viewport; }
 
   resize() {
     // All pages share a 390-unit width. Height follows the visible safe area.
-    let top = 0, bottom = 0, windowWidth = this.canvas.width;
-    try {
-      const info = wx.getSystemInfoSync && wx.getSystemInfoSync();
-      if (info && info.windowWidth) windowWidth = info.windowWidth;
-      if (info && info.safeArea && info.windowWidth) {
-        const ratio = this.canvas.width / windowWidth;
-        top = clamp(info.safeArea.top * ratio, 0, this.canvas.height * .1);
-        bottom = clamp((info.screenHeight - info.safeArea.bottom) * ratio, 0, this.canvas.height * .08);
-      }
-    } catch (e) { /* The simulator may not expose safeArea. */ }
+    const viewport = this.viewport || readViewport(typeof wx === 'undefined' ? {} : wx, this.canvas);
+    const top = viewport?.top ?? 0;
+    const bottom = viewport?.bottom ?? 0;
     const usable = this.canvas.height - top - bottom;
     this.scale = Math.min(this.canvas.width / 390, usable / 680);
     this.h = usable / this.scale;
     this.offsetX = (this.canvas.width - 390 * this.scale) / 2;
     this.offsetY = top;
-    // The native capsule uses screen pixels; convert its bottom edge into Canvas units.
     this.headerControlsY = 64;
-    try {
-      const menu = wx.getMenuButtonBoundingClientRect && wx.getMenuButtonBoundingClientRect();
-      if (menu && Number.isFinite(menu.top) && Number.isFinite(menu.bottom) &&
-          menu.bottom > menu.top && menu.top >= 0) {
-        const pixelRatio = this.canvas.width / windowWidth;
-        this.headerControlsY = Math.max(64,
-          ((menu.bottom + 10) * pixelRatio - this.offsetY) / this.scale);
-      }
-    } catch (e) { /* Keep the fallback when the menu geometry is unavailable. */ }
+    if (viewport && Number.isFinite(viewport.menuBottom)) {
+      this.headerControlsY = Math.max(64,
+        (viewport.menuBottom + 10 - this.offsetY) / this.scale);
+    }
   }
 
   roundedPath(x, y, w, h, r) {

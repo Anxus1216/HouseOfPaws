@@ -4,6 +4,7 @@ import { CARE_ACTIONS } from './care-actions.js';
 import { ACTION_SPEECH, FEEDBACK_MS } from './pet-display.js';
 import { DEBUG_ENABLED } from './debug-config.generated.js';
 import { createDebugDraft, draftChanged, commitDebugDraft, PET_FIELDS } from './debug-editor.js';
+import { readViewport, sameViewport } from './viewport.js';
 import { SPECIES, STORAGE_KEY, hydrate, adopt, care, daily, miniReward,
   ensureTasks, recordTask, claimTask, settleTime, getDailyGrowth,
   MAX_DAILY_GROWTH } from './model.js';
@@ -21,6 +22,8 @@ export default class Main {
     this.canvas = GameGlobal.canvas;
     this.ctx = this.canvas.getContext('2d');
     this.scene = new Scene(this.ctx, this.canvas);
+    this.viewport = GameGlobal.viewport;
+    this.scene.setViewport(this.viewport);
     this.state = this.load();
     this.ui = { page: 'home', speech: '', toast: '', toastUntil: 0,
       playing: false, paused: false, score: 0, remaining: 20, stars: [], basketX: 195,
@@ -33,18 +36,22 @@ export default class Main {
     this.lastCareAt = 0;
     this.sounds = {};
     this.needsDraw = true;
+    this.lastViewportCheck = Date.now();
     this.scene.onAssetReady = () => { this.needsDraw = true; };
     this.scene.preloadSceneImages();
     this.visible = true;
     wx.onTouchStart(event => this.touch(event));
     wx.onTouchMove(event => this.move(event));
     if (wx.onTouchEnd) wx.onTouchEnd(event => this.touchEnd(event));
+    try { if (wx.onWindowResize) wx.onWindowResize(() => this.syncViewport()); }
+    catch (error) { /* The foreground check also handles window changes. */ }
     if (wx.onHide) wx.onHide(() => {
       this.visible = false;
       if (this.ui.playing) this.ui.paused = true;
       this.save();
     });
     if (wx.onShow) wx.onShow(() => {
+      this.syncViewport();
       settleTime(this.state, Date.now());
       ensureTasks(this.state);
       this.lastFrame = Date.now();
@@ -54,6 +61,42 @@ export default class Main {
     });
     this.loop = this.loop.bind(this);
     requestAnimationFrame(this.loop);
+  }
+
+  syncViewport() {
+    const viewport = readViewport(wx, this.canvas);
+    this.lastViewportCheck = Date.now();
+    if (!viewport || sameViewport(this.viewport, viewport)) return false;
+    const resized = !this.viewport || viewport.width !== this.viewport.width ||
+      viewport.height !== this.viewport.height;
+    const fieldChanged = resized || viewport.top !== this.viewport.top ||
+      viewport.bottom !== this.viewport.bottom;
+    this.viewportFieldChanged = fieldChanged;
+    const oldField = this.ui.playing && fieldChanged ? this.scene.gameField() : null;
+    if (fieldChanged) {
+      if (this.ui.playing) this.ui.paused = true;
+      this.debugTouch = null;
+    }
+    if (resized) {
+      this.canvas.width = viewport.width;
+      this.canvas.height = viewport.height;
+      this.ctx = this.canvas.getContext('2d');
+      this.scene.ctx = this.ctx;
+    }
+    this.viewport = viewport;
+    GameGlobal.viewport = viewport;
+    this.scene.setViewport(viewport);
+    this.scene.resize();
+    if (oldField) {
+      const newField = this.scene.gameField();
+      this.ui.stars.forEach(star => {
+        star.y = newField.y + (star.y - oldField.y) * newField.h / oldField.h;
+      });
+    }
+    this.lastFrame = Date.now();
+    this.scene.draw(this.state, this.ui);
+    this.needsDraw = false;
+    return true;
   }
 
   load() {
@@ -96,8 +139,14 @@ export default class Main {
   }
 
   touch(event) {
+    const previousPoint = this.coords(event);
+    const previousId = previousPoint && this.scene.hit(previousPoint.x, previousPoint.y);
+    const changed = this.syncViewport();
     const p = this.coords(event);
     if (!p) return;
+    // A viewport change may move a control under the finger. Keep the touch only
+    // when it still points to the same target after the redraw.
+    if (changed && previousId !== this.scene.hit(p.x, p.y)) return;
     this.needsDraw = true;
     settleTime(this.state, Date.now());
     if (this.ui.debugEditor) {
@@ -218,6 +267,8 @@ export default class Main {
   }
 
   move(event) {
+    if (Date.now() - this.lastViewportCheck >= 500 && this.syncViewport() &&
+      this.viewportFieldChanged) return;
     if (this.ui.debugEditor) {
       if (!this.debugTouch || this.ui.debugKeyboard || this.ui.debugEditor.confirmDiscard) return;
       const p = this.coords(event);
@@ -240,6 +291,7 @@ export default class Main {
   }
 
   touchEnd(event) {
+    if (this.syncViewport() && this.viewportFieldChanged) return;
     if (!this.ui.debugEditor || !this.debugTouch) return;
     const touch = this.debugTouch;
     this.debugTouch = null;
@@ -416,6 +468,7 @@ export default class Main {
 
   loop() {
     const now = Date.now();
+    if (this.visible && now - this.lastViewportCheck >= 500) this.syncViewport();
     const dt = Math.max(0, (now - this.lastFrame) / 1000);
     this.lastFrame = now;
     settleTime(this.state, now);

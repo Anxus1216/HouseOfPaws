@@ -25,11 +25,14 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   const { default: Main } = await import('../js/main.js');
   const game = new Main();
   const tap = (x, y) => handlers.touch({ touches: [{ clientX: x, clientY: y }] });
+  const clientPoint = (x, y) => ({ clientX: game.scene.offsetX + x * game.scene.scale,
+    clientY: game.scene.offsetY + y * game.scene.scale });
   const tapId = id => {
     game.scene.draw(game.state, game.ui);
     const button = game.scene.buttons.find(item => item.id === id);
     assert.ok(button, `button ${id} is visible`);
-    tap(button.x + button.w / 2, button.y + button.h / 2);
+    const point = clientPoint(button.x + button.w / 2, button.y + button.h / 2);
+    tap(point.clientX, point.clientY);
   };
   assert.equal(typeof handlers.touch, 'function');
   tapId('adopt_selected');
@@ -81,7 +84,7 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   const playedBeforeMute = played.length;
   tapId('settings_close');
   tapId('resume_game');
-  handlers.move({ touches: [{ clientX: 150, clientY: 600 }] });
+  handlers.move({ touches: [clientPoint(150, 600)] });
   assert.equal(game.ui.basketX, 150);
   game.updateGame(21);
   assert.equal(played.length, playedBeforeMute);
