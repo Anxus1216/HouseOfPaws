@@ -112,6 +112,34 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   game.save();
   assert.ok(saved.paw_house_save_v1.pets.cat.hunger < 79,
     'saving settles foreground time before advancing lastSeen');
+
+  let draws = 0;
+  game.scene.draw = () => { draws++; };
+  game.ui.page = 'tasks';
+  game.ui.toast = '';
+  game.needsDraw = true;
+  game.loop();
+  game.loop();
+  assert.equal(draws, 1, 'static task page only draws when invalidated');
+  game.notice('领取成功');
+  game.loop();
+  assert.equal(draws, 2, 'a new toast redraws a static page');
+  game.ui.toastUntil = Date.now() - 1;
+  game.loop();
+  assert.equal(draws, 3, 'an expired toast is removed from the screen');
+  handlers.hide();
+  handlers.show();
+  game.loop();
+  assert.equal(draws, 4, 'returning to the foreground redraws the page');
+  game.ui.page = 'home';
+  game.loop();
+  game.loop();
+  assert.equal(draws, 6, 'pet animation keeps drawing each frame');
+  game.ui.showSettings = true;
+  game.needsDraw = true;
+  game.loop();
+  game.loop();
+  assert.equal(draws, 7, 'settings pause the covered pet animation');
 });
 
 test('main actions stay reachable on a shorter portrait screen', async () => {

@@ -28,9 +28,12 @@ export default class Main {
     this.lastSave = Date.now();
     this.lastCareAt = 0;
     this.sounds = {};
+    this.needsDraw = true;
+    this.visible = true;
     wx.onTouchStart(event => this.touch(event));
     wx.onTouchMove(event => this.move(event));
     if (wx.onHide) wx.onHide(() => {
+      this.visible = false;
       if (this.ui.playing) this.ui.paused = true;
       this.save();
     });
@@ -38,6 +41,8 @@ export default class Main {
       settleTime(this.state, Date.now());
       ensureTasks(this.state);
       this.lastFrame = Date.now();
+      this.visible = true;
+      this.needsDraw = true;
       this.save();
     });
     this.loop = this.loop.bind(this);
@@ -58,6 +63,7 @@ export default class Main {
   notice(message) {
     this.ui.toast = message;
     this.ui.toastUntil = Date.now() + 2200;
+    this.needsDraw = true;
   }
 
   playSound(name) {
@@ -85,6 +91,7 @@ export default class Main {
   touch(event) {
     const p = this.coords(event);
     if (!p) return;
+    this.needsDraw = true;
     settleTime(this.state, Date.now());
     const id = this.scene.hit(p.x, p.y);
     if (this.ui.showSettings) {
@@ -188,7 +195,10 @@ export default class Main {
   move(event) {
     if (!this.ui.playing || this.ui.paused || this.ui.page !== 'game') return;
     const p = this.coords(event);
-    if (p) this.ui.basketX = Math.max(83, Math.min(307, p.x));
+    if (p) {
+      this.ui.basketX = Math.max(83, Math.min(307, p.x));
+      this.needsDraw = true;
+    }
   }
 
   startGame() {
@@ -246,6 +256,13 @@ export default class Main {
     }
   }
 
+  isAnimated() {
+    if (this.ui.showSettings || (this.state.active && this.ui.guideStep > 0)) return false;
+    if (!this.state.active) return true;
+    return this.ui.page === 'home' || this.ui.page === 'collection' ||
+      (this.ui.page === 'game' && this.ui.playing && !this.ui.paused);
+  }
+
   loop() {
     const now = Date.now();
     const dt = Math.max(0, (now - this.lastFrame) / 1000);
@@ -254,10 +271,23 @@ export default class Main {
     if (this.ui.expressionUntil && now >= this.ui.expressionUntil) {
       this.ui.expression = 'normal'; this.ui.expressionUntil = 0;
       this.ui.action = ''; this.ui.speech = ''; this.ui.statDelta = '';
+      this.needsDraw = true;
     }
-    if (this.state.tasks && this.state.tasks.date !== undefined) ensureTasks(this.state, now);
+    if (this.ui.toast && now >= this.ui.toastUntil) {
+      this.ui.toast = '';
+      this.needsDraw = true;
+    }
+    if (this.state.tasks && this.state.tasks.date !== undefined) {
+      const previousTasks = this.state.tasks;
+      ensureTasks(this.state, now);
+      if (this.state.tasks !== previousTasks) this.needsDraw = true;
+    }
+    const wasAnimated = this.isAnimated();
     this.updateGame(dt);
-    this.scene.draw(this.state, this.ui);
+    if (this.visible && (this.needsDraw || wasAnimated || this.isAnimated())) {
+      this.scene.draw(this.state, this.ui);
+      this.needsDraw = false;
+    }
     if (now - this.lastSave > 30000) { this.lastSave = now; this.save(); }
     requestAnimationFrame(this.loop);
   }
