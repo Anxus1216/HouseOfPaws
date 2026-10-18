@@ -1,5 +1,6 @@
 import { SPECIES, TASKS, canDaily, getDailyGrowth, MAX_DAILY_GROWTH } from './model.js';
 import { petDisplay } from './pet-display.js';
+import { PET_FIELDS } from './debug-editor.js';
 
 const C = {
   ink: '#5A3F2E', muted: '#9A806B', paper: '#FFF3E2', cream: '#FFF3E2',
@@ -460,8 +461,8 @@ export default class Scene {
     this.nav('collection');
   }
 
-  welcome(state) {
-    this.header(state, '欢迎来到小屋', '一起慢慢长大', '从第一位小伙伴开始', false);
+  welcome(state, ui) {
+    this.header(state, '欢迎来到小屋', '一起慢慢长大', '从第一位小伙伴开始', !!ui.debugEnabled);
     const { sceneY, sceneH } = this.layout();
     const visualH = sceneH + Math.max(70, (this.h - 680) * .25);
     this.sceneBackdrop('home_afternoon', 20, sceneY, 350, visualH, 23, '#F2D8B8');
@@ -591,10 +592,12 @@ export default class Scene {
     this.button('guide_skip', 293, y + 11, 50, 29, '跳过', C.paper, C.muted, null, 11);
   }
 
-  settings(state) {
+  settings(state, ui) {
     this.dim(); this.buttons = [];
-    const y = this.h / 2 - 137;
-    this.box(31, y, 328, 274, 24, C.paper);
+    const enabled = !!ui.debugEnabled;
+    const height = enabled ? 338 : 274;
+    const y = this.h / 2 - height / 2;
+    this.box(31, y, 328, height, 24, C.paper);
     this.text('小屋设置', 58, y + 45, 21, C.ink, 'left', 'bold');
     this.button('settings_close', 304, y + 22, 33, 33, '×', '#F8EEE8', C.brown, null, 20);
     this.box(51, y + 78, 288, 65, 15, '#FFF7F0');
@@ -602,8 +605,138 @@ export default class Scene {
     this.text(state.soundEnabled ? '已开启' : '已关闭', 242, y + 105, 12, C.muted, 'right');
     this.button('sound_toggle', 260, y + 91, 65, 34, state.soundEnabled ? '关闭' : '开启',
       state.soundEnabled ? C.mint : C.coral, '#FFF', null, 11);
-    this.text('游戏进度会保存在当前设备。', 58, y + 185, 12, C.brown);
-    this.text('重新安装或清除数据后，存档无法恢复。', 58, y + 211, 11, C.muted);
+    if (enabled) {
+      this.button('debug_open', 51, y + 159, 288, 48, '调试模式  ›', '#F7E1D0', C.brown, C.line, 14);
+      this.text('开发调试已开启', 58, y + 238, 11, C.coral, 'left', 'bold');
+    }
+    this.text('游戏进度会保存在当前设备。', 58, y + (enabled ? 269 : 185), 12, C.brown);
+    this.text('重新安装或清除数据后，存档无法恢复。', 58,
+      y + (enabled ? 295 : 211), 11, C.muted);
+  }
+
+  debugRows(state, ui) {
+    const rows = [];
+    if (ui.debugDraft.petId) {
+      rows.push({ type: 'section', label: '萌宠状态' });
+      PET_FIELDS.slice(0, 4).forEach(field => rows.push({ type: 'field', ...field }));
+      rows.push({ type: 'section', label: '成长与等级' });
+      PET_FIELDS.slice(4).forEach(field => rows.push({ type: 'field', ...field }));
+    } else {
+      rows.push({ type: 'message', label: '先领养一只萌宠，再编辑萌宠数值。' });
+    }
+    rows.push({ type: 'section', label: '资源' });
+    rows.push({ type: 'field', key: 'coins', label: '爪爪币', integer: true });
+    rows.push({ type: 'section', label: '今日任务' });
+    TASKS.forEach(task => {
+      rows.push({ type: 'field', key: `task.${task.id}.progress`,
+        label: `${task.label} · 进度`, integer: true, target: task.target });
+      rows.push({ type: 'field', key: `task.${task.id}.claimed`,
+        label: `${task.label} · 奖励`, claimed: true });
+    });
+    return rows;
+  }
+
+  debugViewport(ui) {
+    return { top: 141, bottom: this.h - (ui.debugKeyboard ? 307 : 92) };
+  }
+
+  debugEditor(state, ui) {
+    const editor = ui.debugEditor;
+    const draft = ui.debugDraft;
+    this.dim(); this.buttons = [];
+    this.box(10, 12, 370, this.h - 24, 20, C.paper);
+    this.text('开发调试已开启', 28, 38, 11, C.coral, 'left', 'bold');
+    this.text('调试模式', 28, 71, 21, C.ink, 'left', 'bold');
+    this.button('debug_close', 330, 42, 34, 34, '×', '#F8EEE8', C.brown, null, 20);
+    this.text(draft.petId ? `${draft.petName}  (${draft.petId})` : '当前没有陪伴萌宠',
+      28, 99, 12, C.brown);
+    this.text(`任务 ${draft.taskDate}  ·  成长 ${draft.growthDate || '—'}`,
+      28, 121, 10, C.muted);
+    if (editor.message) this.text(editor.message, 28, 138, 9, C.coral);
+
+    const viewport = this.debugViewport(ui);
+    const rows = this.debugRows(state, ui);
+    const contentHeight = rows.reduce((sum, row) => sum +
+      (row.type === 'section' ? 31 : row.type === 'message' ? 48 : 56), 0);
+    const maxScroll = Math.max(0, contentHeight - (viewport.bottom - viewport.top));
+    editor.scroll = clamp(editor.scroll, 0, maxScroll);
+    editor.maxScroll = maxScroll;
+    this.box(20, viewport.top, 350, viewport.bottom - viewport.top, 10, '#FFF9F2');
+    this.ctx.save();
+    this.ctx.beginPath();
+    this.ctx.rect(20, viewport.top, 350, viewport.bottom - viewport.top);
+    this.ctx.clip();
+    let y = viewport.top - editor.scroll;
+    rows.forEach(row => {
+      const height = row.type === 'section' ? 31 : row.type === 'message' ? 48 : 56;
+      if (y + height >= viewport.top && y <= viewport.bottom) {
+        if (row.type === 'section') {
+          this.text(row.label, 35, y + 21, 12, C.coral, 'left', 'bold');
+        } else if (row.type === 'message') {
+          this.text(row.label, 35, y + 25, 11, C.muted);
+        } else {
+          const error = editor.errors[row.key];
+          this.box(29, y + 3, 331, 50, 11, error ? '#FFF0EA' : C.paper,
+            error ? C.coral : C.line);
+          this.text(row.label, 39, y + 21, 11, C.ink);
+          const raw = draft.values[row.key];
+          const value = row.claimed ? raw ? '已领奖' : '未领奖' :
+            `${raw === '' ? '空' : raw}${row.target ? ` / ${row.target}` : ''}`;
+          this.text(value, 344, y + 21, 12, error ? C.coral : C.brown, 'right', 'bold');
+          if (error) this.text(error, 39, y + 41, 9, C.coral);
+          const top = Math.max(y + 3, viewport.top);
+          const bottom = Math.min(y + 53, viewport.bottom);
+          if (bottom > top) this.buttons.push({ id: `debug_field:${row.key}`,
+            x: 29, y: top, w: 331, h: bottom - top });
+        }
+      }
+      y += height;
+    });
+    this.ctx.restore();
+    if (maxScroll > 0) {
+      const track = viewport.bottom - viewport.top - 20;
+      const thumb = Math.max(28, track * (viewport.bottom - viewport.top) / contentHeight);
+      this.box(366, viewport.top + 10 + (track - thumb) * editor.scroll / maxScroll,
+        3, thumb, 2, C.coral);
+    }
+
+    if (ui.debugKeyboard) {
+      this.debugKeypad(ui);
+    } else {
+      this.box(20, this.h - 85, 350, 1, 1, C.line);
+      this.button('debug_cancel', 24, this.h - 76, 85, 51, '取消', '#F6EDE6', C.brown);
+      this.button('debug_up', 119, this.h - 76, 45, 51, '↑', '#F6EDE6', C.brown);
+      this.button('debug_down', 171, this.h - 76, 45, 51, '↓', '#F6EDE6', C.brown);
+      this.button('debug_save', 227, this.h - 76, 139, 51, '保存修改', C.coral, '#FFF');
+    }
+    if (editor.confirmDiscard) {
+      this.dim(); this.buttons = [];
+      const y = this.h / 2 - 96;
+      this.box(36, y, 318, 190, 20, C.paper);
+      this.text('放弃未保存的修改？', 195, y + 51, 17, C.ink, 'center', 'bold');
+      this.text('已输入的调试数值不会保存。', 195, y + 85, 11, C.muted, 'center');
+      this.button('debug_keep', 55, y + 119, 129, 46, '继续编辑', '#F6EDE6', C.brown);
+      this.button('debug_discard', 200, y + 119, 135, 46, '放弃修改', C.coral, '#FFF');
+    }
+  }
+
+  debugKeypad(ui) {
+    const keyboard = ui.debugKeyboard;
+    const y = this.h - 298;
+    this.box(20, y, 350, 280, 17, '#EBD8C4');
+    this.text(`编辑 ${keyboard.label}：${ui.debugDraft.values[keyboard.key] || '空'}`,
+      35, y + 23, 12, C.ink, 'left', 'bold');
+    const keys = [
+      ['1', '2', '3', '⌫'], ['4', '5', '6', '清空'],
+      ['7', '8', '9', keyboard.decimal ? '.' : ''], ['取消', '0', '完成'],
+    ];
+    keys.forEach((row, index) => row.forEach((key, column) => {
+      if (!key) return;
+      const wide = index === 3 && column === 2;
+      this.button(`debug_key:${key}`, 32 + column * 82, y + 35 + index * 56,
+        wide ? 154 : 73, 48, key, key === '完成' ? C.coral : C.paper,
+        key === '完成' ? '#FFF' : C.brown, null, 14);
+    }));
   }
 
   toast(ui) {
@@ -628,7 +761,8 @@ export default class Scene {
     else this.home(state, ui);
     this.toast(ui);
     if (state.active && ui.guideStep > 0) this.guide(ui.guideStep);
-    if (ui.showSettings) this.settings(state);
+    if (ui.showSettings) this.settings(state, ui);
+    if (ui.debugEditor) this.debugEditor(state, ui);
   }
 
   hit(x, y) {

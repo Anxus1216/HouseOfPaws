@@ -55,6 +55,7 @@
       { "type": "folder", "value": "docs" },
       { "type": "folder", "value": "scripts" },
       { "type": "folder", "value": "tests" },
+      { "type": "folder", "value": "config" },
       { "type": "file", "value": "assets/pets/README.md" }
     ],
     "include": []
