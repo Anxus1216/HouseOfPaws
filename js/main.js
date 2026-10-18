@@ -20,7 +20,7 @@ export default class Main {
     this.ctx = this.canvas.getContext('2d');
     this.scene = new Scene(this.ctx, this.canvas);
     this.state = this.load();
-    this.ui = { page: 'home', selected: 0, speech: '', toast: '', toastUntil: 0,
+    this.ui = { page: 'home', speech: '', toast: '', toastUntil: 0,
       playing: false, paused: false, score: 0, remaining: 20, stars: [], basketX: 195,
       gameResult: '', gameGrowth: '', guideStep: this.state.guideStep, showSettings: false,
       expression: 'normal', expressionUntil: 0, action: '', statDelta: '' };
@@ -130,15 +130,26 @@ export default class Main {
       this.ui.page = id.slice(4);
       return;
     }
-    if (id.startsWith('pick_')) { this.ui.selected = Number(id.slice(5)); return; }
+    if (id === 'home_tasks') { this.ui.page = 'tasks'; return; }
+    if (id.startsWith('task_go_')) {
+      const task = id.slice(8);
+      this.ui.page = task === 'game' ? 'game' : 'home';
+      if (task === 'interact') this.notice('轻点小伙伴，就能完成互动');
+      else if (task === 'care') this.notice('选择一种照料方式，完成今日目标');
+      return;
+    }
     if (id === 'adopt_selected' || id.startsWith('adopt_')) {
-      const speciesId = id === 'adopt_selected' ? SPECIES[this.ui.selected].id : id.slice(6);
+      const speciesId = id === 'adopt_selected' ? 'cat' : id.slice(6);
       if (adopt(this.state, speciesId)) {
         this.ui.page = 'home'; this.ui.speech = '终于见到你啦！';
         this.ui.expression = 'happy'; this.ui.expressionUntil = Date.now() + FEEDBACK_MS.tap;
         this.ui.action = ''; this.ui.statDelta = '';
         this.notice('欢迎新伙伴加入小屋 ♡'); this.playSound('adopt'); this.save();
-      } else this.notice('爪爪币不够啦，玩游戏可以赚取');
+      } else {
+        const species = SPECIES.find(item => item.id === speciesId);
+        const missing = Math.max(0, (species && species.cost || 0) - this.state.coins);
+        this.notice(missing ? `还差 ${missing} 爪爪币，玩游戏可以赚取` : '这位伙伴已经在小屋里啦');
+      }
       return;
     }
     if (id.startsWith('select_')) {

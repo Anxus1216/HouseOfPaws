@@ -37,6 +37,10 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   assert.ok(played.includes('audio/adopt.wav'));
   tapId('guide_skip');
   assert.equal(saved.paw_house_save_v1.guideStep, 0);
+  tapId('home_tasks');
+  assert.equal(game.ui.page, 'tasks');
+  tapId('task_go_care');
+  assert.equal(game.ui.page, 'home');
   tapId('feed');
   assert.ok(saved.paw_house_save_v1.pets.cat.hunger > 99.99);
   assert.match(game.ui.statDelta, /饱腹 \+24 · 快乐 \+3/);
@@ -56,7 +60,11 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   tapId('nav_tasks');
   tapId('claim_care');
   tapId('claim_interact');
+  tapId('task_go_game');
+  assert.equal(game.ui.page, 'game');
   tapId('nav_collection');
+  tapId('adopt_rabbit');
+  assert.match(game.ui.toast, /还差 \d+ 爪爪币/);
   tapId('select_cat');
   tapId('nav_game');
   tapId('start_game');
@@ -149,8 +157,11 @@ test('main actions stay reachable on a shorter portrait screen', async () => {
   const canvas = { width: 390, height: 680 };
   const scene = new Scene(context, canvas);
   const state = initialState();
-  adopt(state, 'cat');
   const ui = { page: 'home', speech: '', expressionUntil: 0, action: '', statDelta: '' };
+  scene.draw(state, ui);
+  assert.deepEqual(scene.buttons.map(button => button.id), ['adopt_selected'],
+    'first visit has one clear adoption action');
+  adopt(state, 'cat');
   for (const page of ['home', 'collection', 'tasks', 'game']) {
     ui.page = page;
     scene.draw(state, ui);
@@ -178,7 +189,7 @@ test('growth and status bars stay inside the home card on short and tall screens
     const card = boxes.find(box => box.x === 20 && box.y === 132 && box.w === 350);
     const statusBars = boxes.filter(box => (box.x === 39 || box.x === 202) &&
       box.w === 125 && box.h === 7 && box.fill === '#F0E8E2');
-    const title = labels.find(label => label.value === '陪伴时光');
+    const title = labels.find(label => label.value === '照料小伙伴');
     assert.ok(card && title && statusBars.length === 4);
     const statusBottom = Math.max(...statusBars.map(box => box.y + box.h));
     assert.ok(statusBottom <= card.y + card.h - 8, `${height}px: bars fit within card`);
