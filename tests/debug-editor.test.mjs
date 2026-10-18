@@ -26,10 +26,20 @@ test('debug draft exposes all current pet numbers, currency and task status', ()
   assert.equal(draft.taskDate, dayKey(TODAY));
 });
 
+test('stat fields show at most two decimals without changing untouched stored precision', () => {
+  const { state } = setup();
+  state.pets.cat.hunger = 97.765;
+  const draft = createDebugDraft(state, TODAY);
+  assert.equal(draft.values.hunger, '97.77');
+  assert.equal(prepareDebugState(state, draft, TODAY).state.pets.cat.hunger, 97.765);
+  draft.values.hunger = '97.76';
+  assert.equal(prepareDebugState(state, draft, TODAY).state.pets.cat.hunger, 97.76);
+});
+
 test('validation rejects invalid and conflicting values without silent clipping', () => {
   for (const [field, value] of [
     ['coins', ''], ['coins', '1e3'], ['coins', '1000000'],
-    ['hunger', '-1'], ['energy', 'Infinity'], ['level', '1.5'],
+    ['hunger', '-1'], ['energy', 'Infinity'], ['hunger', '12.345'], ['level', '1.5'],
     ['dailyGrowth', '101'], ['actions', '1.2'],
   ]) {
     const { draft } = setup();
@@ -101,7 +111,7 @@ test('closed mode and storage failure leave the original unchanged', () => {
   const { state, draft } = setup();
   draft.values.coins = '333';
   let writes = 0;
-  assert.equal(commitDebugDraft(state, draft, TODAY, () => { writes++; }).reason, 'disabled');
+  assert.equal(commitDebugDraft(state, draft, TODAY, () => { writes++; }, false).reason, 'disabled');
   assert.equal(writes, 0);
   assert.equal(commitDebugDraft(state, draft, TODAY, () => {
     writes++; throw new Error('disk full');

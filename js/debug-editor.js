@@ -35,7 +35,7 @@ export function createDebugDraft(state, now = Date.now()) {
     PET_FIELDS.forEach(field => {
       values[field.key] = String(field.key === 'dailyGrowth'
         ? pet.dailyGrowth?.date === growthDate ? pet.dailyGrowth.earned : 0
-        : pet[field.key]);
+        : field.integer ? pet[field.key] : Math.round(pet[field.key] * 100) / 100);
     });
   }
   TASKS.forEach(task => {
@@ -51,7 +51,7 @@ export const draftChanged = draft => Object.keys(draft.values).some(key =>
   draft.values[key] !== draft.original[key]);
 
 function parseNumber(value, { min = 0, max, integer }) {
-  const pattern = integer ? /^(0|[1-9]\d*)$/ : /^(0|[1-9]\d*)(?:\.\d+)?$/;
+  const pattern = integer ? /^(0|[1-9]\d*)$/ : /^(0|[1-9]\d*)(?:\.\d{1,2})?$/;
   if (typeof value !== 'string' || !pattern.test(value)) return null;
   const number = Number(value);
   return Number.isFinite(number) && number >= min && number <= max &&
@@ -69,7 +69,7 @@ export function validateDebugDraft(draft) {
       parsed.pet[field.key] = number;
       if (number === null) errors[field.key] = field.min
         ? `请输入 ${field.min}–${field.max} 的整数`
-        : `请输入 0–${field.max} 的${field.integer ? '整数' : '数值'}`;
+        : `请输入 0–${field.max} 的${field.integer ? '整数' : '数值，最多两位小数'}`;
     });
     if (parsed.pet.level !== null && parsed.pet.xp !== null &&
         (parsed.pet.level === 99 ? parsed.pet.xp !== 0 :

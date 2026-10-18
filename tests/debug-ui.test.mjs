@@ -27,6 +27,12 @@ test('settings entry, numeric keypad, save and disabled mode work through touch 
     handlers.start({ touches: [point] });
     handlers.end({ changedTouches: [point] });
   };
+  const swipeList = (fromY, toY) => {
+    game.scene.draw(game.state, game.ui);
+    handlers.start({ touches: [{ clientX: 195, clientY: fromY }] });
+    handlers.move({ touches: [{ clientX: 195, clientY: toY }] });
+    handlers.end({ changedTouches: [{ clientX: 195, clientY: toY }] });
+  };
   tapId('settings');
   tapId('debug_open');
   assert.equal(game.ui.debugDraft.petId, null);
@@ -44,8 +50,17 @@ test('settings entry, numeric keypad, save and disabled mode work through touch 
   tapId('guide_skip');
   tapId('settings');
   tapId('debug_open');
-  tapId('debug_down');
-  tapId('debug_down');
+  tapId('debug_field:hunger');
+  for (const key of ['1', '.', '2', '3', '4']) tapId(`debug_key:${key}`);
+  assert.equal(game.ui.debugDraft.values.hunger, '1.23');
+  tapId('debug_key:完成');
+  tapId('debug_cancel');
+  tapId('debug_discard');
+  tapId('settings_close');
+  tapId('settings');
+  tapId('debug_open');
+  swipeList(520, 200);
+  assert.ok(game.ui.debugEditor.scroll > 0);
   tapId('debug_field:coins');
   tapId('debug_key:9');
   tapId('debug_key:完成');
@@ -83,6 +98,12 @@ test('editor hit areas and fixed actions stay within short and tall screens', as
       };
       scene.draw(state, ui);
       assert.ok(scene.buttons.length > 0);
+      assert.equal(scene.buttons.some(button => ['debug_up', 'debug_down'].includes(button.id)), false);
+      if (!ui.debugKeyboard) {
+        const cancel = scene.buttons.find(button => button.id === 'debug_cancel');
+        const save = scene.buttons.find(button => button.id === 'debug_save');
+        assert.ok(cancel && save && cancel.x + cancel.w < save.x);
+      }
       for (const button of scene.buttons) {
         assert.ok(button.x >= 0 && button.x + button.w <= 390, `${height}:${button.id} width`);
         assert.ok(button.y >= 0 && button.y + button.h <= scene.h,

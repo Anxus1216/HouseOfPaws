@@ -718,10 +718,8 @@ export default class Scene {
       this.debugKeypad(ui);
     } else {
       this.box(20, this.h - 85, 350, 1, 1, C.line);
-      this.button('debug_cancel', 24, this.h - 76, 85, 51, '取消', '#F6EDE6', C.brown);
-      this.button('debug_up', 119, this.h - 76, 45, 51, '↑', '#F6EDE6', C.brown);
-      this.button('debug_down', 171, this.h - 76, 45, 51, '↓', '#F6EDE6', C.brown);
-      this.button('debug_save', 227, this.h - 76, 139, 51, '保存修改', C.coral, '#FFF');
+      this.button('debug_cancel', 24, this.h - 76, 150, 51, '取消', '#F6EDE6', C.brown);
+      this.button('debug_save', 184, this.h - 76, 182, 51, '保存修改', C.coral, '#FFF');
     }
     if (editor.confirmDiscard) {
       this.dim(); this.buttons = [];

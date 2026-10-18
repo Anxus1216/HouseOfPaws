@@ -298,7 +298,9 @@ export default class Main {
           keyboard.replace = false;
         }
       } else if (/^\d$/.test(key)) {
-        draft.values[field] = keyboard.replace ? key : draft.values[field] + key;
+        const value = draft.values[field];
+        if (!keyboard.decimal || !value.includes('.') || value.split('.')[1].length < 2 ||
+            keyboard.replace) draft.values[field] = keyboard.replace ? key : value + key;
         keyboard.replace = false;
       }
       delete editor.errors[field];
@@ -309,9 +311,6 @@ export default class Main {
     if (id === 'debug_close' || id === 'debug_cancel') {
       if (draftChanged(draft)) editor.confirmDiscard = true;
       else this.closeDebugEditor();
-    } else if (id === 'debug_up' || id === 'debug_down') {
-      editor.scroll = Math.max(0, Math.min(editor.maxScroll,
-        editor.scroll + (id === 'debug_down' ? 265 : -265)));
     } else if (id === 'debug_save') {
       const now = Date.now();
       const result = commitDebugDraft(this.state, draft, now,
