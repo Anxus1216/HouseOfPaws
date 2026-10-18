@@ -176,6 +176,59 @@ test('main actions stay reachable on a shorter portrait screen', async () => {
   }
 });
 
+test('essential captions remain readable on a narrow short screen', async () => {
+  const { default: Scene } = await import('../js/scene.js');
+  const { initialState, adopt, TASKS } = await import('../js/model.js');
+  const context = new Proxy({}, { get: () => () => {} });
+  const scene = new Scene(context, { width: 320, height: 568 });
+  scene.setViewport({ width: 320, height: 568, top: 24, bottom: 34, menuBottom: 60 });
+  const state = initialState();
+  adopt(state, 'cat');
+  const ui = { page: 'home', expressionUntil: 0 };
+  const labels = [];
+  const drawPage = page => {
+    ui.page = page;
+    labels.length = 0;
+    scene.draw(state, ui);
+    assert.equal(scene.scale, .75);
+  };
+  const originalText = scene.text.bind(scene);
+  scene.text = (value, x, y, size, ...rest) => {
+    labels.push({ value: String(value), x, y, size });
+    originalText(value, x, y, size, ...rest);
+  };
+  const readable = value => {
+    const label = labels.find(item => item.value === value);
+    assert.ok(label, `${value} is visible`);
+    assert.ok(label.size * scene.scale >= 11, `${value} is at least 11 screen pixels`);
+    return label;
+  };
+
+  drawPage('home');
+  for (const value of ['小屋', '萌宠', '任务', '游戏', '喂食', '清洁',
+    '饱腹', '免费']) readable(value);
+  const action = readable('喂食');
+  const hint = readable('✦ 5');
+  assert.ok((hint.y - action.y - (hint.size + action.size) / 2) * scene.scale >= 3,
+    'action label and hint retain a visible gap');
+
+  drawPage('collection');
+  readable('一只喜欢晒太阳的小猫');
+  readable('领养需 ✦ 80');
+
+  drawPage('tasks');
+  readable(TASKS[0].label);
+  readable('去完成 →');
+  const summary = labels.find(item => item.value.startsWith('今天已完成'));
+  const slogan = readable('把小事变成好回忆  ✦');
+  assert.ok(summary && slogan.y - summary.y >= 20,
+    'task summary and decorative caption use separate lines on a short screen');
+
+  drawPage('game');
+  readable('每局 20 秒 · 星星越多奖励越多');
+  readable('玩法说明  ›');
+});
+
 test('header controls stay below the native WeChat menu on different screens', async () => {
   const { default: Scene } = await import('../js/scene.js');
   const { initialState, adopt } = await import('../js/model.js');

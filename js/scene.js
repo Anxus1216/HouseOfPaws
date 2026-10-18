@@ -130,6 +130,10 @@ export default class Scene {
     c.fillText(String(value), x, y);
   }
 
+  readableText(value, x, y, size, color = C.ink, align = 'left', weight = 'normal') {
+    this.text(value, x, y, Math.max(size, 11 / this.scale), color, align, weight);
+  }
+
   circle(x, y, r, fill, stroke, line = 1) {
     const c = this.ctx;
     c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2);
@@ -167,7 +171,7 @@ export default class Scene {
 
   button(id, x, y, w, h, label, fill = C.paper, color = C.ink, border = null, fontSize = 14) {
     this.box(x, y, w, h, Math.min(16, h / 2), fill, border);
-    this.text(label, x + w / 2, y + h / 2 + 1, fontSize, color, 'center', 'bold');
+    this.readableText(label, x + w / 2, y + h / 2 + 1, fontSize, color, 'center', 'bold');
     this.buttons.push({ id, x, y, w, h });
   }
 
@@ -199,7 +203,7 @@ export default class Scene {
     }
     const eyebrowY = 83 + 16 * ratio;
     this.box(20, eyebrowY - 2, 22, 2, 1, C.coral);
-    this.text(eyebrow, 51, eyebrowY, 10, C.coral, 'left', 'bold');
+    this.readableText(eyebrow, 51, eyebrowY, 10, C.coral, 'left', 'bold');
     this.text(title, 20, eyebrowY + 24, 23, C.ink, 'left', 'bold');
     if (ratio > .3) this.text(subtitle, 21, eyebrowY + 48, 11, C.muted);
   }
@@ -346,8 +350,9 @@ export default class Scene {
       const x = 36 + (i % 2) * 170, yy = y + Math.floor(i / 2) * 35;
       const low = item[1] < 25;
       this.circle(x + 3, yy, 3, item[2]);
-      this.text(item[0], x + 10, yy, 10, low ? C.coral : C.muted);
-      this.text(Math.round(item[1]) + '%', x + 137, yy, 10, low ? C.coral : C.brown, 'right', 'bold');
+      this.readableText(item[0], x + 10, yy, 10, low ? C.coral : C.muted);
+      this.readableText(Math.round(item[1]) + '%', x + 137, yy, 10,
+        low ? C.coral : C.brown, 'right', 'bold');
       this.box(x, yy + 11, 137, 4, 2, C.track);
       this.box(x, yy + 11, 137 * clamp(item[1], 0, 100) / 100, 4, 2, low ? C.coral : item[2]);
     });
@@ -386,13 +391,14 @@ export default class Scene {
     this.box(20, sheetY, 350, sheetH, 19, C.wash);
     this.text(pet.name, 36, sheetY + 24, 17, C.ink, 'left', 'bold');
     this.box(93, sheetY + 12, 42, 22, 6, '#E6C8A8');
-    this.text('LV. ' + pet.level, 114, sheetY + 23, 10, C.brown, 'center', 'bold');
+    this.readableText('LV. ' + pet.level, 114, sheetY + 23, 10, C.brown, 'center', 'bold');
     const needed = pet.level * 40;
-    this.text(pet.level >= 99 ? '已满级' : `成长 ${pet.xp}/${needed}`, 354, sheetY + 24, 10, C.muted, 'right');
+    this.readableText(pet.level >= 99 ? '已满级' : `成长 ${pet.xp}/${needed}`,
+      354, sheetY + 24, 10, C.muted, 'right');
     this.box(36, sheetY + 43, 238, 5, 3, C.track);
     this.box(36, sheetY + 43, 238 * clamp(pet.xp / needed, 0, 1), 5, 3, C.coral);
     const todayGrowth = getDailyGrowth(pet);
-    this.text(`今日 ${todayGrowth}/${MAX_DAILY_GROWTH}`, 353, sheetY + 45, 10,
+    this.readableText(`今日 ${todayGrowth}/${MAX_DAILY_GROWTH}`, 353, sheetY + 45, 10,
       todayGrowth >= MAX_DAILY_GROWTH ? C.coral : C.muted, 'right');
     this.box(36, sheetY + 60, 318, 1, 1, C.line);
     this.stats(pet, sheetY + 78);
@@ -402,7 +408,7 @@ export default class Scene {
       (tasks.progress || {})[task.id] >= task.target &&
       !(tasks.claimed || {})[task.id]).length;
     const progress = TASKS.filter(task => (tasks.progress || {})[task.id] >= task.target).length;
-    this.text(ready ? `待领奖励 ${ready}  ›` : `今日目标 ${progress}/${TASKS.length}  ›`,
+    this.readableText(ready ? `待领奖励 ${ready}  ›` : `今日目标 ${progress}/${TASKS.length}  ›`,
       370, headingY, 11, C.coral, 'right');
     this.buttons.push({ id: 'home_tasks', x: 225, y: headingY - 17, w: 150, h: 34 });
     [['feed', '◉', '喂食', '✦ 5'], ['wash', '◌', '清洁', '免费'],
@@ -415,8 +421,10 @@ export default class Scene {
         i === 1 ? '#E6E9DE' : i === 3 ? '#E6DFE4' : '#EDD6B7');
       this.text(a[1], x + 36, actionsY + 23, 24,
         unavailable ? '#AC9A89' : i === 1 ? '#6F9B9A' : C.brown, 'center');
-      this.text(a[2], x + 36, actionsY + 54, 11, unavailable ? C.muted : C.brown, 'center', 'bold');
-      this.text(unavailable ? '暂不可用' : a[3], x + 36, actionsY + 70, 9, C.muted, 'center');
+      this.readableText(a[2], x + 36, actionsY + 54, 11,
+        unavailable ? C.muted : C.brown, 'center', 'bold');
+      this.readableText(unavailable ? '暂不可用' : a[3], x + 36,
+        actionsY + 73, 9, C.muted, 'center');
       this.buttons.push({ id: a[0], x, y: actionsY, w: 75, h: 82 });
     });
     this.nav('home');
@@ -431,7 +439,8 @@ export default class Scene {
       const selected = active === item[0];
       if (selected) this.box(x + 30, y, 27, 3, 1.5, C.coral);
       this.text(item[1], x + 44, y + 27, 23, selected ? C.coral : C.brown, 'center');
-      this.text(item[2], x + 44, y + 54, 11, selected ? C.coral : C.muted, 'center', selected ? 'bold' : 'normal');
+      this.readableText(item[2], x + 44, y + 54, 11,
+        selected ? C.coral : C.muted, 'center', selected ? 'bold' : 'normal');
       this.buttons.push({ id: 'nav_' + item[0], x, y: y + 3, w: 87, h: 67 });
     });
   }
@@ -452,10 +461,10 @@ export default class Scene {
         i === 0 ? '#F9EBDD' : i === 1 ? '#EEE7E7' : '#F4E5D8');
       const petSize = (rowH - 28) / 300;
       this.pet(spec.id, 88, y + rowH - 21 - petSize * 130, petSize, this.time);
-      this.text(spec.type, 155, y + 31, 10, C.muted);
+      this.readableText(spec.type, 155, y + 31, 10, C.muted);
       this.text(spec.name, 155, y + 56, 20, C.ink, 'left', 'bold');
-      this.text(spec.line, 155, y + 81, 10, C.muted);
-      this.text(owned ? `LV. ${state.pets[spec.id].level} · 陪伴中` :
+      this.readableText(spec.line, 155, y + 81, 10, C.muted);
+      this.readableText(owned ? `LV. ${state.pets[spec.id].level} · 陪伴中` :
         spec.cost ? `领养需 ✦ ${spec.cost}` : '免费领养', 155, y + rowH - 24, 10, C.coral);
       this.button(owned ? 'select_' + spec.id : 'adopt_' + spec.id,
         282, y + rowH - 40, 76, 29,
@@ -476,8 +485,10 @@ export default class Scene {
     this.pet('cat', 195, sceneY + visualH - 130 * petSize - 6, petSize, this.time);
     const infoY = sceneY + visualH + 23;
     this.text('奶糖', 195, infoY, 24, C.ink, 'center', 'bold');
-    this.text('喜欢晒太阳的奶油小猫，正等着你', 195, infoY + 29, 12, C.muted, 'center');
-    this.text('糯米和团团也会在小屋里等你认识', 195, this.h - 137, 11, C.muted, 'center');
+    this.readableText('喜欢晒太阳的奶油小猫，正等着你',
+      195, infoY + 29, 12, C.muted, 'center');
+    this.readableText('糯米和团团也会在小屋里等你认识',
+      195, this.h - 137, 11, C.muted, 'center');
     this.button('adopt_selected', 53, this.h - 114, 284, 53,
       '免费领养奶糖  →', C.coral, '#FFF', null, 15);
   }
@@ -489,8 +500,11 @@ export default class Scene {
     const claimed = state.tasks && state.tasks.claimed || {};
     const completed = TASKS.filter(task => (progress[task.id] || 0) >= task.target).length;
     this.box(20, sceneY, 350, 58, 18, '#EED7B4');
-    this.text(`今天已完成 ${completed} / ${TASKS.length}`, 38, sceneY + 29, 14, C.brown, 'left', 'bold');
-    this.text('把小事变成好回忆  ✦', 352, sceneY + 29, 10, C.muted, 'right');
+    const compact = this.scale < .9;
+    this.readableText(`今天已完成 ${completed} / ${TASKS.length}`, 38,
+      sceneY + (compact ? 19 : 29), 14, C.brown, 'left', 'bold');
+    this.readableText('把小事变成好回忆  ✦', 352,
+      sceneY + (compact ? 43 : 29), 10, C.muted, 'right');
     const rowStart = sceneY + 69;
     const rowStep = 105 + 19 * ratio;
     TASKS.forEach((task, i) => {
@@ -502,9 +516,10 @@ export default class Scene {
       this.circle(54, y + 24, 19, art.color);
       this.text(art.mark, 54, y + 25, 20, C.coral, 'center', 'bold');
       this.text(art.title, 82, y + 17, 15, C.ink, 'left', 'bold');
-      this.text(claimedThis ? '今天已完成，明天继续吧' : task.label, 82, y + 40, 10, C.muted);
-      this.text('✦ ' + task.reward, 354, y + 18, 10, C.coral, 'right', 'bold');
-      this.text(`${count} / ${task.target}`, 82, y + 74, 11, C.muted);
+      this.readableText(claimedThis ? '今天已完成，明天继续吧' : task.label,
+        82, y + 40, 10, C.muted);
+      this.readableText('✦ ' + task.reward, 354, y + 18, 10, C.coral, 'right', 'bold');
+      this.readableText(`${count} / ${task.target}`, 82, y + 74, 11, C.muted);
       this.button(claimedThis ? 'task_done_' + task.id : done ? 'claim_' + task.id :
         'task_go_' + task.id, 277, y + 62, 80, 30,
         claimedThis ? '已领取' : done ? '领取奖励' : task.id === 'game' ? '去游戏 →' : '去完成 →',
@@ -515,7 +530,7 @@ export default class Scene {
     });
     const giftY = rowStart + TASKS.length * rowStep + 6 + extra;
     this.box(20, giftY, 350, 51, 17, C.wash);
-    this.text('✦  每日礼物 · +30 爪爪币', 37, giftY + 26, 11, C.brown);
+    this.readableText('✦  每日礼物 · +30 爪爪币', 37, giftY + 26, 11, C.brown);
     this.button('daily', 281, giftY + 11, 77, 30,
       canDaily(state) ? '领取礼物' : '明天再来',
       canDaily(state) ? C.coral : '#E6D5C0', canDaily(state) ? '#FFF' : C.muted,
@@ -538,7 +553,8 @@ export default class Scene {
     if (ui.playing) {
       this.box(36, fieldY + 13, 246, 38, 19, C.paper);
       this.text('✦  ' + ui.score, 54, fieldY + 33, 16, C.ink, 'left', 'bold');
-      this.text(Math.ceil(ui.remaining) + ' 秒', 267, fieldY + 33, 12, C.brown, 'right', 'bold');
+      this.readableText(Math.ceil(ui.remaining) + ' 秒', 267,
+        fieldY + 33, 12, C.brown, 'right', 'bold');
       this.button('pause_game', 306, fieldY + 13, 43, 38, 'Ⅱ', C.paper, C.brown);
       (ui.stars || []).forEach(s => this.text('✦', s.x, s.y, 34, '#FFD777', 'center', 'bold'));
       this.box(ui.basketX - 43, fieldY + fieldH - 50, 86, 28, 12, '#D8937E');
@@ -547,18 +563,19 @@ export default class Scene {
       this.text('✦', 195, fieldY + fieldH * .43, 64, '#FFE1A0', 'center', 'bold');
       if (ui.gameResult) {
         this.text('本局完成！', 195, field.bottom - 158, 20, '#FFF9E7', 'center', 'bold');
-        this.text(ui.gameResult, 195, field.bottom - 130, 11, '#FFF1D3', 'center');
-        if (ui.gameGrowth) this.text(ui.gameGrowth, 195, field.bottom - 108,
+        this.readableText(ui.gameResult, 195, field.bottom - 130, 11, '#FFF1D3', 'center');
+        if (ui.gameGrowth) this.readableText(ui.gameGrowth, 195, field.bottom - 108,
           11, '#FFD777', 'center', 'bold');
       } else {
         this.text('接住每一颗小星星', 195, field.bottom - 137, 18, '#FFF9E7', 'center', 'bold');
-        this.text('左右滑动篮子，收集闪亮的好心情', 195, field.bottom - 109, 11, '#FFF1D3', 'center');
+        this.readableText('左右滑动篮子，收集闪亮的好心情',
+          195, field.bottom - 109, 11, '#FFF1D3', 'center');
       }
       this.button('start_game', 93, fieldY + fieldH - 67, 204, 46,
         ui.gameResult ? '再玩一局  →' : '开始接星星  →', C.coral, '#FFF');
     }
-    this.text('每局 20 秒 · 星星越多奖励越多', 21, field.bottom + 24, 10, C.muted);
-    this.text('玩法说明  ›', 368, field.bottom + 24, 10, C.coral, 'right');
+    this.readableText('每局 20 秒 · 星星越多奖励越多', 21, field.bottom + 24, 10, C.muted);
+    this.readableText('玩法说明  ›', 368, field.bottom + 24, 10, C.coral, 'right');
     this.buttons.push({ id: 'game_help', x: 281, y: field.bottom + 7, w: 91, h: 34 });
     this.nav('game');
     if (ui.playing && ui.paused) {
@@ -591,8 +608,8 @@ export default class Scene {
     this.circle(195, y + 91, 36, step === 3 ? '#FFF0D4' : step === 2 ? '#FBE3DB' : '#E9F0E8');
     this.text(step === 3 ? '✦' : step === 2 ? '♥' : '♡', 195, y + 93, 35, C.coral, 'center');
     this.text(page[0], 195, y + 150, 21, C.ink, 'center', 'bold');
-    this.text(page[1], 195, y + 188, 12, C.brown, 'center');
-    this.text(page[2], 195, y + 211, 11, C.muted, 'center');
+    this.readableText(page[1], 195, y + 188, 12, C.brown, 'center');
+    this.readableText(page[2], 195, y + 211, 11, C.muted, 'center');
     this.button('guide_next', 62, y + 244, 266, 45, step === 3 ? '开始陪伴' : '下一步', C.coral, '#FFF');
     this.button('guide_skip', 293, y + 11, 50, 29, '跳过', C.paper, C.muted, null, 11);
   }
@@ -612,10 +629,11 @@ export default class Scene {
       state.soundEnabled ? C.mint : C.coral, '#FFF', null, 11);
     if (enabled) {
       this.button('debug_open', 51, y + 159, 288, 48, '调试模式  ›', '#F7E1D0', C.brown, C.line, 14);
-      this.text('开发调试已开启', 58, y + 238, 11, C.coral, 'left', 'bold');
+      this.readableText('开发调试已开启', 58, y + 238, 11, C.coral, 'left', 'bold');
     }
-    this.text('游戏进度会保存在当前设备。', 58, y + (enabled ? 269 : 185), 12, C.brown);
-    this.text('重新安装或清除数据后，存档无法恢复。', 58,
+    this.readableText('游戏进度会保存在当前设备。',
+      58, y + (enabled ? 269 : 185), 12, C.brown);
+    this.readableText('重新安装或清除数据后，存档无法恢复。', 58,
       y + (enabled ? 295 : 211), 11, C.muted);
   }
 
