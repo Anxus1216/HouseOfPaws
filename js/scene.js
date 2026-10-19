@@ -46,6 +46,8 @@ export default class Scene {
     this.ctx = ctx;
     this.canvas = canvas;
     this.scale = 1;
+    this.pixelScaleX = 1;
+    this.pixelScaleY = 1;
     this.h = EXPANDED_LAYOUT_HEIGHT;
     this.offsetX = 0;
     this.offsetY = 0;
@@ -66,8 +68,12 @@ export default class Scene {
     const bottom = viewport?.bottom ?? 0;
     const left = viewport?.left ?? 0;
     const right = viewport?.right ?? 0;
-    const usable = this.canvas.height - top - bottom;
-    const usableWidth = Math.max(1, this.canvas.width - left - right);
+    const logicalWidth = this.viewport?.width ?? this.canvas.width;
+    const logicalHeight = this.viewport?.height ?? this.canvas.height;
+    this.pixelScaleX = this.canvas.width / logicalWidth;
+    this.pixelScaleY = this.canvas.height / logicalHeight;
+    const usable = logicalHeight - top - bottom;
+    const usableWidth = Math.max(1, logicalWidth - left - right);
     this.scale = Math.min(usableWidth / 390, usable / COMPACT_LAYOUT_HEIGHT);
     this.h = usable / this.scale;
     this.offsetX = left + (usableWidth - 390 * this.scale) / 2;
@@ -828,6 +834,12 @@ export default class Scene {
     this.text(ui.toast, 195, this.h - 227, 12, '#FFF', 'center');
   }
 
+  setLayoutTransform() {
+    this.ctx.setTransform(this.scale * this.pixelScaleX, 0, 0,
+      this.scale * this.pixelScaleY, this.offsetX * this.pixelScaleX,
+      this.offsetY * this.pixelScaleY);
+  }
+
   drawAnimation(state, ui) {
     const { sceneY, sceneH, ratio } = this.layout();
     let bottom = sceneY + sceneH;
@@ -845,7 +857,7 @@ export default class Scene {
     this.time = Date.now() / MILLISECONDS_PER_SECOND;
     c.save();
     try {
-      c.setTransform(this.scale, 0, 0, this.scale, this.offsetX, this.offsetY);
+      this.setLayoutTransform();
       c.beginPath(); c.rect(ANIMATION_CLIP_LEFT, clipY, ANIMATION_CLIP_WIDTH, clipHeight);
       c.clip();
       c.fillStyle = C.cream;
@@ -867,7 +879,7 @@ export default class Scene {
     const c = this.ctx;
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.fillStyle = C.cream; c.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    c.setTransform(this.scale, 0, 0, this.scale, this.offsetX, this.offsetY);
+    this.setLayoutTransform();
     c.clearRect(0, 0, 390, this.h);
     this.background();
     if (!state.active) this.welcome(state, ui);

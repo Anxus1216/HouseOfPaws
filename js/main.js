@@ -5,6 +5,7 @@ import { ACTION_SPEECH, FEEDBACK_MS } from './pet-display.js';
 import { DEBUG_ENABLED } from './debug-config.generated.js';
 import { createDebugDraft, draftChanged, commitDebugDraft, PET_FIELDS } from './debug-editor.js';
 import { readViewport, sameViewport } from './viewport.js';
+import { canvasBacking } from './canvas-resolution.js';
 import { logInfo, logWarn, logError } from './logger.js';
 import { SPECIES, STORAGE_KEY, hydrate, adopt, care, daily, miniReward,
   ensureTasks, recordTask, claimTask, settleTime, getDailyGrowth,
@@ -70,7 +71,8 @@ export default class Main {
   }
 
   syncViewport() {
-    const viewport = readViewport(wx, this.canvas);
+    // The backing store may be larger than the logical window.
+    const viewport = readViewport(wx, this.viewport || {});
     this.lastViewportCheck = Date.now();
     if (!viewport || sameViewport(this.viewport, viewport)) return false;
     const resized = !this.viewport || viewport.width !== this.viewport.width ||
@@ -84,9 +86,10 @@ export default class Main {
       if (this.ui.playing) this.ui.paused = true;
       this.debugTouch = null;
     }
-    if (resized) {
-      this.canvas.width = viewport.width;
-      this.canvas.height = viewport.height;
+    const backing = canvasBacking(viewport);
+    if (this.canvas.width !== backing.width || this.canvas.height !== backing.height) {
+      this.canvas.width = backing.width;
+      this.canvas.height = backing.height;
       this.ctx = this.canvas.getContext('2d');
       this.scene.ctx = this.ctx;
     }

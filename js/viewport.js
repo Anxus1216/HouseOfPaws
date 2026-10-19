@@ -15,7 +15,7 @@ export function readViewport(api, canvas = {}) {
   if (!current || !validSize(current.windowWidth) || !validSize(current.windowHeight) ||
       !validArea(current.safeArea, current.screenHeight) ||
       !validHorizontalArea(current.safeArea, current.screenWidth) ||
-      !validInset(current.screenTop)) {
+      !validInset(current.screenTop) || !validSize(current.pixelRatio)) {
     try { if (api.getSystemInfoSync) legacy = api.getSystemInfoSync(); }
     catch (error) { /* Keep the available window data. */ }
   }
@@ -27,6 +27,7 @@ export function readViewport(api, canvas = {}) {
   const height = [current?.windowHeight, legacy?.windowHeight, current?.screenHeight,
     legacy?.screenHeight, canvas.height].find(validSize);
   if (!validSize(width) || !validSize(height)) return null;
+  const pixelRatio = [current?.pixelRatio, legacy?.pixelRatio].find(validSize) ?? 1;
 
   const screenTop = validInset(current?.screenTop) ? current.screenTop :
     validInset(legacy?.screenTop) ? legacy.screenTop : null;
@@ -68,10 +69,11 @@ export function readViewport(api, canvas = {}) {
       menuBottom = menu.bottom - (screenTop ?? 0);
     }
   } catch (error) { /* The capsule geometry is optional. */ }
-  return { width, height, top, bottom, left, right, menuBottom };
+  return { width, height, top, bottom, left, right, menuBottom, pixelRatio };
 }
 
 export function sameViewport(a, b) {
-  return !!a && !!b && ['width', 'height', 'top', 'bottom', 'left', 'right', 'menuBottom']
+  return !!a && !!b && ['width', 'height', 'top', 'bottom', 'left', 'right',
+    'menuBottom', 'pixelRatio']
     .every(key => a[key] === b[key]);
 }

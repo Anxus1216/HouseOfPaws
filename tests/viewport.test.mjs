@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readViewport, sameViewport } from '../js/viewport.js';
+import { canvasBacking } from '../js/canvas-resolution.js';
 import Scene from '../js/scene.js';
 import { initialState, adopt } from '../js/model.js';
 
@@ -11,7 +12,94 @@ test('safe area and capsule are converted from screen to window coordinates', ()
     getMenuButtonBoundingClientRect: () => ({ top: 52, bottom: 84 }),
   });
   assert.deepEqual(viewport, { width: 390, height: 760, top: 0, bottom: 0, left: 0, right: 0,
-    menuBottom: 40 });
+    menuBottom: 40, pixelRatio: 1 });
+});
+
+test('pixel ratio uses window info, legacy fallback and a safe default', () => {
+  const window = { windowWidth: 390, windowHeight: 844, pixelRatio: 2.75 };
+  assert.equal(readViewport({ getWindowInfo: () => window }).pixelRatio, 2.75);
+  assert.equal(readViewport({ getWindowInfo: () => ({ ...window, pixelRatio: NaN }),
+    getSystemInfoSync: () => ({ pixelRatio: 3 }) }).pixelRatio, 3);
+  assert.equal(readViewport({ getWindowInfo: () => ({ ...window, pixelRatio: 0 }),
+    getSystemInfoSync: () => ({ pixelRatio: -1 }) }).pixelRatio, 1);
+  assert.equal(sameViewport({ ...window, pixelRatio: 2 },
+    { ...window, pixelRatio: 3 }), false);
+});
+
+test('canvas backing grows for density but stays within the mobile pixel budget', () => {
+  const logical = { width: 390, height: 844 };
+  assert.deepEqual(canvasBacking({ ...logical, pixelRatio: 1 }),
+    { width: 390, height: 844, scaleX: 1, scaleY: 1 });
+  assert.deepEqual(canvasBacking({ ...logical, pixelRatio: 2 }),
+    { width: 780, height: 1688, scaleX: 2, scaleY: 2 });
+  assert.deepEqual(canvasBacking({ ...logical, pixelRatio: 3 }),
+    { width: 1170, height: 2532, scaleX: 3, scaleY: 3 });
+  const large = canvasBacking({ width: 1024, height: 768, pixelRatio: 4 });
+  assert.ok(large.width * large.height <= 4_000_000);
+  assert.ok(large.scaleX >= 1 && large.scaleX < 3);
+});
+
+test('density changes redraw at physical resolution without moving touch targets or pausing play', async () => {
+  const transforms = [];
+  const context = new Proxy({ setTransform: (...args) => transforms.push(args) },
+    { get(target, key) { return target[key] || (() => {}); } });
+  const canvas = { width: 0, height: 0, getContext: () => context };
+  const handlers = {};
+  let metrics = { windowWidth: 390, windowHeight: 844, pixelRatio: 2 };
+  globalThis.GameGlobal = {};
+  globalThis.requestAnimationFrame = () => 1;
+  globalThis.wx = {
+    createCanvas: () => canvas,
+    getWindowInfo: () => metrics,
+    getStorageSync: () => null,
+    setStorageSync() {},
+    onTouchStart: callback => { handlers.touch = callback; },
+    onTouchMove() {},
+    onWindowResize: callback => { handlers.resize = callback; },
+  };
+  const { default: Main } = await import('../js/main.js');
+  GameGlobal.canvas = canvas;
+  GameGlobal.viewport = readViewport(wx, canvas);
+  const game = new Main();
+  assert.equal(canvas.width, 780, 'initial backing width uses 2x density');
+  assert.equal(canvas.height, 1688);
+  adopt(game.state, 'cat');
+  game.ui.guideStep = 0;
+  game.scene.draw(game.state, game.ui);
+  assert.deepEqual(transforms.at(-1), [game.scene.scale * 2, 0, 0,
+    game.scene.scale * 2, game.scene.offsetX * 2, game.scene.offsetY * 2]);
+  const tap = id => {
+    game.scene.draw(game.state, game.ui);
+    const button = game.scene.buttons.find(item => item.id === id);
+    assert.ok(button, `${id} is visible`);
+    handlers.touch({ touches: [{
+      clientX: game.scene.offsetX + (button.x + button.w / 2) * game.scene.scale,
+      clientY: game.scene.offsetY + (button.y + button.h / 2) * game.scene.scale,
+    }] });
+  };
+  tap('nav_tasks');
+  assert.equal(game.ui.page, 'tasks', '2x density keeps logical touch coordinates');
+
+  game.ui.page = 'game';
+  game.ui.playing = true;
+  game.ui.paused = false;
+  game.ui.score = 4;
+  game.scene.draw(game.state, game.ui);
+  metrics = { ...metrics, pixelRatio: 3 };
+  handlers.resize();
+  assert.equal(canvas.width, 1170);
+  assert.equal(canvas.height, 2532);
+  assert.equal(game.ui.paused, false, 'a density-only change does not pause the game');
+  assert.equal(game.ui.score, 4);
+  assert.deepEqual(transforms.at(-1), [game.scene.scale * 3, 0, 0,
+    game.scene.scale * 3, game.scene.offsetX * 3, game.scene.offsetY * 3]);
+  game.scene.drawAnimation(game.state, game.ui);
+  assert.deepEqual(transforms.at(-1), [game.scene.scale * 3, 0, 0,
+    game.scene.scale * 3, game.scene.offsetX * 3, game.scene.offsetY * 3]);
+  game.ui.playing = false;
+  game.ui.page = 'home';
+  tap('nav_tasks');
+  assert.equal(game.ui.page, 'tasks', '3x density keeps logical touch coordinates');
 });
 
 test('asymmetric side insets keep every main control inside the horizontal safe area', () => {
@@ -112,6 +200,8 @@ test('runtime window and safe-area changes redraw before accepting touch', async
     onHide() {},
   };
   const { default: Main } = await import('../js/main.js');
+  GameGlobal.canvas = canvas;
+  GameGlobal.viewport = readViewport(wx, canvas);
   const game = new Main();
   const tap = id => {
     game.scene.draw(game.state, game.ui);
