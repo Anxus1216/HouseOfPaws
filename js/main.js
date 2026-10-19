@@ -229,7 +229,6 @@ export default class Main {
       this.ui.page = id.slice(4);
       return;
     }
-    if (id === 'home_tasks') { this.ui.page = 'tasks'; return; }
     if (id === 'game_help') { this.notice('左右滑动篮子接星星，20 秒后结算奖励'); return; }
     if (id.startsWith('task_go_')) {
       const task = id.slice(8);

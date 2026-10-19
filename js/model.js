@@ -1,4 +1,4 @@
-import { CARE_ACTIONS } from './care-actions.js';
+import { CARE_ACTIONS, MIN_PLAY_ENERGY_REMAINING } from './care-actions.js';
 
 export const SPECIES = [
   { id: 'cat', name: '奶糖', type: '奶油小猫', color: '#F5CDA5', accent: '#D78B78', cost: 0, line: '一只喜欢晒太阳的小猫' },
@@ -158,7 +158,7 @@ export function care(state, action, now = Date.now()) {
   if (!effect) return { error: '无法执行该照料' };
   if (Math.round(pet[effect.target]) >= 100) return { error: effect.fullMessage };
   if (state.coins < effect.cost) return { error: '爪爪币不够啦' };
-  if (action === 'play' && pet.energy + effect.changes.energy < 15) {
+  if (action === 'play' && pet.energy + effect.changes.energy < MIN_PLAY_ENERGY_REMAINING) {
     return { error: '先让宝贝休息一下吧' };
   }
   state.coins -= effect.cost;

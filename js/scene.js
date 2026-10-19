@@ -1,5 +1,6 @@
 import { SPECIES, TASKS, canDaily, getDailyGrowth, MAX_DAILY_GROWTH } from './model.js';
 import { petDisplay } from './pet-display.js';
+import { CARE_ACTIONS, MIN_PLAY_ENERGY_REMAINING } from './care-actions.js';
 import { PET_FIELDS } from './debug-editor.js';
 import { readViewport } from './viewport.js';
 import { logInfo, logWarn, logError } from './logger.js';
@@ -23,6 +24,33 @@ const SCENE_NAMES = ['home_afternoon', 'wash_nook', 'play_garden', 'rest_evening
 // The design scales from the compact screen height to the fully expanded layout.
 const COMPACT_LAYOUT_HEIGHT = 680;
 const EXPANDED_LAYOUT_HEIGHT = 844;
+const NAV_HEIGHT = 64;
+const HOME_LAYOUT = Object.freeze({
+  sceneX: 20, sceneWidth: 350, sceneRadius: 23,
+  sceneTopCompact: 136, sceneTopExpanded: 155,
+  sceneBelowControls: 82, sceneToStats: 8,
+  dockInset: 10, dockBottom: 10, dockHeight: 72, dockRadius: 17,
+  gaugeSize: 68, gaugeRadius: 27, gaugeStroke: 7.5,
+  gaugeAboveNav: 84, labelAboveNav: 16,
+  petScaleHeight: 450,
+});
+const HOME_STATS = Object.freeze([
+  { label: '饱腹', field: 'hunger', color: '#F0734E' },
+  { label: '清洁', field: 'clean', color: '#25B8C3' },
+  { label: '心情', field: 'happy', color: '#E9B42D' },
+  { label: '精力', field: 'energy', color: '#67C565' },
+]);
+const HOME_ACTIONS = Object.freeze([
+  { id: 'feed', label: '喂食', icon: 'feed', color: '#9F694A', fill: '#F3E3CE' },
+  { id: 'wash', label: '清洁', icon: 'wash', color: '#6D9995', fill: '#E6F0EA' },
+  { id: 'play', label: '玩耍', icon: 'play', color: '#9F694A', fill: '#F3E3CE' },
+  { id: 'rest', label: '休息', icon: 'rest', color: '#8C7F9C', fill: '#EEE6EE' },
+]);
+const HEADER_TYPE = Object.freeze({
+  headingSize: 20, descriptionSize: 14, captionSize: 11,
+  accentAboveHeading: 18, descriptionBelowHeading: 24, captionBelowHeading: 48,
+});
+const HEADER_COIN = Object.freeze({ x: 274, topOffset: 3, width: 69, height: 32 });
 // The welcome artwork extends below the home scene, with more space on taller screens.
 const WELCOME_MIN_EXTENSION = 70;
 const WELCOME_HEIGHT_EXTENSION_RATE = .25;
@@ -231,10 +259,25 @@ export default class Scene {
       (EXPANDED_LAYOUT_HEIGHT - COMPACT_LAYOUT_HEIGHT), 0, 1);
     const extra = Math.max(0, this.h - EXPANDED_LAYOUT_HEIGHT);
     return { ratio, extra, sceneY: 136 + 33 * ratio,
-      sceneH: 165 + 83 * ratio + extra, navY: this.h - 74 };
+      sceneH: 165 + 83 * ratio + extra, navY: this.h - NAV_HEIGHT };
   }
 
-  header(state, eyebrow, title, subtitle, settings = true) {
+  homeLayout() {
+    const { ratio, navY } = this.layout();
+    const sceneY = Math.max(HOME_LAYOUT.sceneTopCompact +
+      (HOME_LAYOUT.sceneTopExpanded - HOME_LAYOUT.sceneTopCompact) * ratio,
+    this.headerControlsY + HOME_LAYOUT.sceneBelowControls);
+    const gaugeY = navY - HOME_LAYOUT.gaugeAboveNav;
+    const sceneBottom = gaugeY - HOME_LAYOUT.sceneToStats;
+    const dockX = HOME_LAYOUT.sceneX + HOME_LAYOUT.dockInset;
+    const dockW = HOME_LAYOUT.sceneWidth - HOME_LAYOUT.dockInset * 2;
+    return { sceneY, sceneBottom, sceneH: sceneBottom - sceneY,
+      gaugeY, gaugeBottom: gaugeY + HOME_LAYOUT.gaugeSize,
+      labelY: navY - HOME_LAYOUT.labelAboveNav,
+      dockX, dockW, dockY: sceneBottom - HOME_LAYOUT.dockBottom - HOME_LAYOUT.dockHeight };
+  }
+
+  header(state, heading, description, caption, settings = true) {
     const { ratio } = this.layout();
     this.circle(37, 36, 16, '#ECD1AE');
     this.ellipse(37, 40, 7, 6, C.brown);
@@ -242,17 +285,23 @@ export default class Scene {
     this.text('爪爪小屋', 60, 30, 15, C.ink, 'left', 'bold');
     this.text('P A W P A W   H O U S E', 60, 47, 7, C.muted);
     const controlsY = this.headerControlsY;
-    this.box(274, controlsY + 3, 69, 32, 16, C.peach);
-    this.text('✦  ' + state.coins, 308, controlsY + 20, 13, C.brown, 'center', 'bold');
+    const coinY = controlsY + HEADER_COIN.topOffset;
+    this.box(HEADER_COIN.x, coinY, HEADER_COIN.width, HEADER_COIN.height,
+      HEADER_COIN.height / 2, C.peach);
+    this.text('✦  ' + state.coins, HEADER_COIN.x + HEADER_COIN.width / 2,
+      coinY + HEADER_COIN.height / 2 + 1,
+      13, C.brown, 'center', 'bold');
     if (settings) {
       this.text('⚙', 366, controlsY + 19, 20, C.brown, 'center');
       this.buttons.push({ id: 'settings', x: 346, y: controlsY, w: 38, h: 38 });
     }
-    const eyebrowY = 83 + 16 * ratio;
-    this.box(20, eyebrowY - 2, 22, 2, 1, C.coral);
-    this.readableText(eyebrow, 51, eyebrowY, 10, C.coral, 'left', 'bold');
-    this.text(title, 20, eyebrowY + 24, 23, C.ink, 'left', 'bold');
-    if (ratio > .3) this.text(subtitle, 21, eyebrowY + 48, 11, C.muted);
+    const headingY = 83 + 16 * ratio;
+    this.box(20, headingY - HEADER_TYPE.accentAboveHeading, 22, 2, 1, C.coral);
+    this.text(heading, 20, headingY, HEADER_TYPE.headingSize, C.ink, 'left', 'bold');
+    this.text(description, 20, headingY + HEADER_TYPE.descriptionBelowHeading,
+      HEADER_TYPE.descriptionSize, C.brown);
+    if (ratio > .3 && caption) this.text(caption, 20,
+      headingY + HEADER_TYPE.captionBelowHeading, HEADER_TYPE.captionSize, C.muted);
   }
 
   face(expression, t) {
@@ -407,92 +456,133 @@ export default class Scene {
     c.restore();
   }
 
-  stats(pet, y) {
-    const items = [
-      ['饱腹', pet.hunger, '#DCA277'], ['清洁', pet.clean, '#87AAA4'],
-      ['快乐', pet.happy, '#CE8EA1'], ['精力', pet.energy, '#A4A2C8'],
-    ];
-    items.forEach((item, i) => {
-      const x = 36 + (i % 2) * 170, yy = y + Math.floor(i / 2) * 35;
-      const low = item[1] < 25;
-      this.circle(x + 3, yy, 3, item[2]);
-      this.readableText(item[0], x + 10, yy, 10, low ? C.coral : C.muted);
-      this.readableText(Math.round(item[1]) + '%', x + 137, yy, 10,
-        low ? C.coral : C.brown, 'right', 'bold');
-      this.box(x, yy + 11, 137, 4, 2, C.track);
-      this.box(x, yy + 11, 137 * clamp(item[1], 0, 100) / 100, 4, 2, low ? C.coral : item[2]);
+  drawHomeGauge(x, y, value, color) {
+    const c = this.ctx;
+    const centerY = y + HOME_LAYOUT.gaugeSize / 2;
+    const start = Math.PI * .75;
+    const sweep = Math.PI * 1.5;
+    c.save();
+    c.lineWidth = HOME_LAYOUT.gaugeStroke;
+    c.lineCap = 'round';
+    c.beginPath(); c.arc(x, centerY, HOME_LAYOUT.gaugeRadius, start, start + sweep);
+    c.strokeStyle = '#E4D6C1'; c.stroke();
+    if (value > 0) {
+      c.beginPath(); c.arc(x, centerY, HOME_LAYOUT.gaugeRadius,
+        start, start + sweep * clamp(value, 0, 100) / 100);
+      c.strokeStyle = color; c.stroke();
+    }
+    c.restore();
+    this.text(`${Math.round(value)}%`, x, centerY, 13, C.ink, 'center', 'bold');
+  }
+
+  homeStats(pet, layout) {
+    const columnWidth = HOME_LAYOUT.sceneWidth / HOME_STATS.length;
+    HOME_STATS.forEach((stat, index) => {
+      const x = HOME_LAYOUT.sceneX + columnWidth * (index + .5);
+      this.drawHomeGauge(x, layout.gaugeY, pet[stat.field], stat.color);
+      this.readableText(stat.label, x, layout.labelY, 11, C.brown, 'center', 'bold');
+    });
+  }
+
+  careIcon(id, x, y, color) {
+    const c = this.ctx;
+    c.save(); c.translate(x, y);
+    c.strokeStyle = color; c.fillStyle = color; c.lineWidth = 2.2;
+    c.lineCap = 'round'; c.lineJoin = 'round';
+    if (id === 'feed') {
+      c.beginPath(); c.moveTo(-10, 1); c.quadraticCurveTo(0, 15, 10, 1); c.stroke();
+      c.beginPath(); c.moveTo(-11, 0); c.lineTo(11, 0); c.stroke();
+      [-5, 0, 5].forEach((offset, index) => {
+        c.beginPath(); c.arc(offset, index === 1 ? -6 : -4, 1.5, 0, Math.PI * 2); c.fill();
+      });
+    } else if (id === 'wash') {
+      c.beginPath(); c.moveTo(0, -11);
+      c.bezierCurveTo(-4, -5, -8, 0, -7, 4);
+      c.bezierCurveTo(-6, 12, 6, 12, 7, 4);
+      c.bezierCurveTo(8, 0, 4, -5, 0, -11); c.stroke();
+      c.beginPath(); c.arc(9, -7, 2, 0, Math.PI * 2); c.stroke();
+    } else if (id === 'play') {
+      c.beginPath(); c.arc(0, 0, 9, 0, Math.PI * 2); c.stroke();
+      c.beginPath(); c.moveTo(-8, -3); c.quadraticCurveTo(0, -2, 4, -8); c.stroke();
+      c.beginPath(); c.moveTo(-4, 8); c.quadraticCurveTo(-2, 0, 8, 3); c.stroke();
+    } else {
+      c.beginPath(); c.arc(1, 0, 9, Math.PI * .33, Math.PI * 1.67);
+      c.quadraticCurveTo(-1, 4, 1, 0); c.stroke();
+    }
+    c.restore();
+  }
+
+  homeActions(state, pet, layout) {
+    const c = this.ctx;
+    c.save(); c.shadowColor = 'rgba(75,46,28,.15)'; c.shadowBlur = 12; c.shadowOffsetY = 3;
+    this.box(layout.dockX, layout.dockY, layout.dockW, HOME_LAYOUT.dockHeight,
+      HOME_LAYOUT.dockRadius, 'rgba(255,249,239,.94)');
+    c.restore();
+    const columnWidth = layout.dockW / HOME_ACTIONS.length;
+    HOME_ACTIONS.forEach((action, index) => {
+      const effect = CARE_ACTIONS[action.id];
+      const x = layout.dockX + columnWidth * (index + .5);
+      const unavailable = Math.round(pet[effect.target]) >= 100 ||
+        state.coins < effect.cost ||
+        (action.id === 'play' &&
+          pet.energy + effect.changes.energy < MIN_PLAY_ENERGY_REMAINING);
+      const iconY = layout.dockY + 22;
+      const iconColor = unavailable ? '#AC9A89' : action.color;
+      const iconFill = unavailable ? '#E9DFD2' : action.fill;
+      this.circle(x, iconY, 15, iconFill);
+      this.careIcon(action.icon, x, iconY, iconColor);
+      this.readableText(action.label, x, layout.dockY + 45, 11,
+        unavailable ? C.muted : C.brown, 'center', 'bold');
+      this.readableText(unavailable ? '暂不可用' : effect.cost ? `✦ ${effect.cost}` : '免费',
+        x, layout.dockY + 64, 9, C.muted, 'center');
+      this.buttons.push({ id: action.id,
+        x: layout.dockX + index * columnWidth + 2,
+        y: layout.dockY + 2, w: columnWidth - 4, h: HOME_LAYOUT.dockHeight - 4 });
     });
   }
 
   home(state, ui) {
     const pet = state.pets[state.active];
-    this.header(state, '陪伴日记', '今天也一起慢慢长大', '多一点陪伴，就多一点好心情');
-    const { ratio, sceneY, sceneH } = this.layout();
-    const sheetY = sceneY + sceneH + 10 + 5 * ratio;
-    const sheetH = 151 + 17 * ratio;
-    const headingY = sheetY + sheetH + 15 + 4 * ratio;
-    const actionsY = headingY + 28 + 4 * ratio;
+    const layout = this.homeLayout();
+    const sceneCenterX = HOME_LAYOUT.sceneX + HOME_LAYOUT.sceneWidth / 2;
+    this.header(state, '陪伴日记', '今天也一起慢慢长大', '');
     const display = petDisplay(pet, ui);
     const backdrop = CARE_SCENE[display.action] || 'home_afternoon';
-    this.sceneBackdrop(backdrop, 20, sceneY, 350, sceneH, 23, '#F2D8B8');
-    this.box(20, sceneY, 350, sceneH, 23, 'rgba(0,0,0,0)', C.coral, 1.5);
-    const petSize = clamp(sceneH / 300, .55, .94);
-    this.pet(pet.id, 195, sceneY + sceneH - petSize * 130 - 5, petSize, this.time,
+    this.sceneBackdrop(backdrop, HOME_LAYOUT.sceneX, layout.sceneY,
+      HOME_LAYOUT.sceneWidth, layout.sceneH, HOME_LAYOUT.sceneRadius, '#F2D8B8');
+    this.box(HOME_LAYOUT.sceneX, layout.sceneY, HOME_LAYOUT.sceneWidth, layout.sceneH,
+      HOME_LAYOUT.sceneRadius, 'rgba(0,0,0,0)', C.coral, 1.5);
+    const petSize = clamp(layout.sceneH / HOME_LAYOUT.petScaleHeight, .8, 1.08);
+    this.pet(pet.id, sceneCenterX, layout.dockY - petSize * 130, petSize, this.time,
       display.expression, display.action);
-    this.buttons.push({ id: 'pet_tap', x: 82, y: sceneY + 4, w: 225, h: sceneH - 8 });
+    this.buttons.push({ id: 'pet_tap', x: 82, y: layout.sceneY + 4,
+      w: 225, h: layout.dockY - layout.sceneY - 4 });
+    const infoX = HOME_LAYOUT.sceneX + 12, infoY = layout.sceneY + 12;
+    this.box(infoX, infoY, 245, 43, 12, 'rgba(255,249,239,.94)');
+    this.text(`${pet.name} · LV. ${pet.level}`, infoX + 11, infoY + 14,
+      13, C.brown, 'left', 'bold');
+    const needed = pet.level * 40;
+    const growth = pet.level >= 99 ? '已满级' : `成长 ${pet.xp}/${needed}`;
+    this.readableText(`${growth} · 今日 ${getDailyGrowth(pet)}/${MAX_DAILY_GROWTH}`,
+      infoX + 11, infoY + 32, 10, C.muted);
     if (display.speech) {
-      this.box(181, sceneY + 11, 162, 30, 15, C.paper);
-      this.text(display.speech.slice(0, 13), 262, sceneY + 27, 11, C.brown, 'center');
+      this.box(103, layout.sceneY + 64, 184, 30, 15, C.paper);
+      this.text(display.speech.slice(0, 13), sceneCenterX, layout.sceneY + 80,
+        11, C.brown, 'center');
     }
     if (display.statDelta) {
       const lines = display.statDelta.split('|');
       const twoLines = lines.length > 1;
-      this.box(43, sceneY + sceneH - (twoLines ? 54 : 37), 304,
-        twoLines ? 43 : 27, 13, '#FFF5E7');
-      this.text(lines[0], 195, sceneY + sceneH - (twoLines ? 40 : 23),
+      const feedbackH = twoLines ? 43 : 27;
+      const feedbackY = layout.dockY - feedbackH - 8;
+      this.box(43, feedbackY, 304, feedbackH, 13, '#FFF5E7');
+      this.text(lines[0], sceneCenterX, feedbackY + 14,
         twoLines ? 10 : 12, C.coral, 'center', 'bold');
-      if (twoLines) this.text(lines[1], 195, sceneY + sceneH - 21,
+      if (twoLines) this.text(lines[1], sceneCenterX, feedbackY + 33,
         11, C.brown, 'center', 'bold');
     }
-    this.box(20, sheetY, 350, sheetH, 19, C.wash);
-    this.text(pet.name, 36, sheetY + 24, 17, C.ink, 'left', 'bold');
-    this.box(93, sheetY + 12, 42, 22, 6, '#E6C8A8');
-    this.readableText('LV. ' + pet.level, 114, sheetY + 23, 10, C.brown, 'center', 'bold');
-    const needed = pet.level * 40;
-    this.readableText(pet.level >= 99 ? '已满级' : `成长 ${pet.xp}/${needed}`,
-      354, sheetY + 24, 10, C.muted, 'right');
-    this.box(36, sheetY + 43, 238, 5, 3, C.track);
-    this.box(36, sheetY + 43, 238 * clamp(pet.xp / needed, 0, 1), 5, 3, C.coral);
-    const todayGrowth = getDailyGrowth(pet);
-    this.readableText(`今日 ${todayGrowth}/${MAX_DAILY_GROWTH}`, 353, sheetY + 45, 10,
-      todayGrowth >= MAX_DAILY_GROWTH ? C.coral : C.muted, 'right');
-    this.box(36, sheetY + 60, 318, 1, 1, C.line);
-    this.stats(pet, sheetY + 78);
-    this.text('照料' + pet.name, 20, headingY, 15, C.ink, 'left', 'bold');
-    const tasks = state.tasks || {};
-    const ready = TASKS.filter(task =>
-      (tasks.progress || {})[task.id] >= task.target &&
-      !(tasks.claimed || {})[task.id]).length;
-    const progress = TASKS.filter(task => (tasks.progress || {})[task.id] >= task.target).length;
-    this.readableText(ready ? `待领奖励 ${ready}  ›` : `今日目标 ${progress}/${TASKS.length}  ›`,
-      370, headingY, 11, C.coral, 'right');
-    this.buttons.push({ id: 'home_tasks', x: 225, y: headingY - 17, w: 150, h: 34 });
-    [['feed', '◉', '喂食', '✦ 5'], ['wash', '◌', '清洁', '免费'],
-      ['play', '✿', '玩耍', '免费'], ['rest', '☾', '休息', '免费']].forEach((a, i) => {
-      const x = 26 + i * 89;
-      const value = [pet.hunger, pet.clean, pet.happy, pet.energy][i];
-      const unavailable = Math.round(value) >= 100 || (a[0] === 'play' && pet.energy < 29) ||
-        (a[0] === 'feed' && state.coins < 5);
-      this.circle(x + 36, actionsY + 22, 22, unavailable ? '#E9DFD2' :
-        i === 1 ? '#E6E9DE' : i === 3 ? '#E6DFE4' : '#EDD6B7');
-      this.text(a[1], x + 36, actionsY + 23, 24,
-        unavailable ? '#AC9A89' : i === 1 ? '#6F9B9A' : C.brown, 'center');
-      this.readableText(a[2], x + 36, actionsY + 54, 11,
-        unavailable ? C.muted : C.brown, 'center', 'bold');
-      this.readableText(unavailable ? '暂不可用' : a[3], x + 36,
-        actionsY + 73, 9, C.muted, 'center');
-      this.buttons.push({ id: a[0], x, y: actionsY, w: 75, h: 82 });
-    });
+    this.homeActions(state, pet, layout);
+    this.homeStats(pet, layout);
     this.nav('home');
   }
 
@@ -507,7 +597,8 @@ export default class Scene {
       this.text(item[1], x + 44, y + 27, 23, selected ? C.coral : C.brown, 'center');
       this.readableText(item[2], x + 44, y + 54, 11,
         selected ? C.coral : C.muted, 'center', selected ? 'bold' : 'normal');
-      this.buttons.push({ id: 'nav_' + item[0], x, y: y + 3, w: 87, h: 67 });
+      this.buttons.push({ id: 'nav_' + item[0], x, y: y + 3,
+        w: 87, h: NAV_HEIGHT - 7 });
     });
   }
 
@@ -842,6 +933,7 @@ export default class Scene {
 
   drawAnimation(state, ui) {
     const { sceneY, sceneH, ratio } = this.layout();
+    let top = sceneY;
     let bottom = sceneY + sceneH;
     if (!state.active) bottom += Math.max(WELCOME_MIN_EXTENSION,
       (this.h - COMPACT_LAYOUT_HEIGHT) * WELCOME_HEIGHT_EXTENSION_RATE);
@@ -849,10 +941,15 @@ export default class Scene {
       (COLLECTION_ROW_BASE_HEIGHT + COLLECTION_ROW_EXTRA_HEIGHT * ratio) +
       (SPECIES.length - 1) * (COLLECTION_ROW_BASE_GAP + COLLECTION_ROW_EXTRA_GAP * ratio);
     else if (ui.page === 'game') bottom = this.gameField().bottom;
+    else if (ui.page === 'home') {
+      const home = this.homeLayout();
+      top = home.sceneY;
+      bottom = home.sceneBottom;
+    }
 
     const c = this.ctx;
     const buttons = this.buttons;
-    const clipY = sceneY - ANIMATION_CLIP_TOP_MARGIN;
+    const clipY = top - ANIMATION_CLIP_TOP_MARGIN;
     const clipHeight = bottom - clipY;
     this.time = Date.now() / MILLISECONDS_PER_SECOND;
     c.save();

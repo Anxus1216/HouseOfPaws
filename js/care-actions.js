@@ -1,3 +1,5 @@
+export const MIN_PLAY_ENERGY_REMAINING = 15;
+
 export const CARE_ACTIONS = {
   feed: {
     target: 'hunger', changes: { hunger: 25, happy: 3 }, cost: 5, xp: 10,

@@ -40,7 +40,7 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   assert.ok(played.includes('audio/adopt.wav'));
   tapId('guide_skip');
   assert.equal(saved.paw_house_save_v1.guideStep, 0);
-  tapId('home_tasks');
+  tapId('nav_tasks');
   assert.equal(game.ui.page, 'tasks');
   tapId('task_go_care');
   assert.equal(game.ui.page, 'home');
@@ -311,7 +311,56 @@ test('header controls stay below the native WeChat menu on different screens', a
   assert.equal(fallback.buttons.find(item => item.id === 'settings').y, 64);
 });
 
-test('growth and status bars stay inside the home status sheet on short and tall screens', async () => {
+test('every page gives its heading more prominence than its description', async () => {
+  const { default: Scene } = await import('../js/scene.js');
+  const { initialState, adopt } = await import('../js/model.js');
+  const context = new Proxy({}, { get(target, key) { return target[key] || (() => {}); } });
+  const adopted = initialState();
+  adopt(adopted, 'cat');
+  const pages = [
+    { page: 'welcome', state: initialState(), heading: '欢迎来到小屋',
+      description: '一起慢慢长大' },
+    { page: 'home', state: adopted, heading: '陪伴日记',
+      description: '今天也一起慢慢长大' },
+    { page: 'collection', state: adopted, heading: '小伙伴们',
+      description: '每一位都值得被珍惜' },
+    { page: 'tasks', state: adopted, heading: '每日清单',
+      description: '今天的小小约定' },
+    { page: 'game', state: adopted, heading: '星星接接乐',
+      description: '把星光装进小篮子' },
+  ];
+  const sharedCoins = new Map();
+  for (const height of [680, 844]) {
+    for (const page of pages) {
+      const scene = new Scene(context, { width: 390, height });
+      const labels = [], boxes = [];
+      scene.text = (value, x, y, size) => labels.push({ value, x, y, size });
+      scene.box = (x, y, w, h, r, fill) => boxes.push({ x, y, w, h, fill });
+      scene.draw(page.state, { page: page.page, guideStep: 0, expressionUntil: 0 });
+      const heading = labels.find(label => label.value === page.heading);
+      const description = labels.find(label => label.value === page.description);
+      assert.ok(heading && description, `${page.page}: both header lines render`);
+      assert.ok(heading.size > description.size,
+        `${page.page}: heading is larger than its description`);
+      assert.equal(heading.x, description.x, `${page.page}: both lines align`);
+      assert.ok(heading.y + heading.size / 2 < description.y - description.size / 2,
+        `${page.page}: header lines do not overlap`);
+      const contentTop = page.page === 'home' ? scene.homeLayout().sceneY : scene.layout().sceneY;
+      assert.ok(description.y + description.size / 2 < contentTop,
+        `${page.page}: description clears content on ${height}px screen`);
+      const coin = boxes.find(box => box.fill === '#F1DFC5');
+      assert.ok(coin, `${page.page}: coin appears in the shared header`);
+      const coinBounds = { x: coin.x, y: coin.y, w: coin.w, h: coin.h };
+      if (!sharedCoins.has(height)) sharedCoins.set(height, coinBounds);
+      assert.deepEqual(coinBounds, sharedCoins.get(height),
+        `${page.page}: coin position matches every other page`);
+      assert.ok(coin.y + coin.h < contentTop,
+        `${page.page}: coin clears content on ${height}px screen`);
+    }
+  }
+});
+
+test('large home scene, action dock and colored arcs fit on short and tall screens', async () => {
   const { default: Scene } = await import('../js/scene.js');
   const { initialState, adopt } = await import('../js/model.js');
   const context = new Proxy({}, { get(target, key) { return target[key] || (() => {}); } });
@@ -320,18 +369,27 @@ test('growth and status bars stay inside the home status sheet on short and tall
   const ui = { page: 'home', speech: '', expressionUntil: 0, action: '', statDelta: '' };
   for (const height of [680, 844]) {
     const scene = new Scene(context, { width: 390, height });
-    const boxes = [], labels = [];
+    const boxes = [], labels = [], arcs = [];
     scene.box = (x, y, w, h, r, fill) => boxes.push({ x, y, w, h, fill });
     scene.text = (value, x, y) => labels.push({ value, x, y });
+    scene.drawHomeGauge = (x, y, value, color) => arcs.push({ x, y, value, color });
     scene.draw(state, ui);
-    const sheet = boxes.find(box => box.x === 20 && box.w === 350 && box.fill === '#F3E2C8');
-    const statusBars = boxes.filter(box => (box.x === 36 || box.x === 206) &&
-      box.w === 137 && box.h === 4 && box.fill === '#E6D2B6');
-    const title = labels.find(label => label.value === '照料奶糖');
-    assert.ok(sheet && title && statusBars.length === 4);
-    const statusBottom = Math.max(...statusBars.map(box => box.y + box.h));
-    assert.ok(statusBottom <= sheet.y + sheet.h - 8, `${height}px: bars fit within sheet`);
-    assert.ok(title.y - statusBottom >= 12, `${height}px: title clears the bars`);
+    const layout = scene.homeLayout();
+    const dock = boxes.find(box => box.x === layout.dockX && box.y === layout.dockY &&
+      box.w === layout.dockW);
+    assert.ok(dock, `${height}px: care actions sit in the scene dock`);
+    assert.ok(layout.sceneH >= 340, `${height}px: pet scene remains large`);
+    assert.ok(layout.sceneBottom < layout.gaugeY,
+      `${height}px: scene clears the arc row`);
+    assert.equal(arcs.length, 4);
+    assert.equal(new Set(arcs.map(arc => arc.color)).size, 4,
+      'each state has a distinct arc color');
+    assert.ok(arcs.every(arc => arc.y < layout.gaugeBottom &&
+      layout.gaugeBottom <= layout.labelY + 1),
+      `${height}px: status labels are close to the arcs`);
+    assert.ok(layout.labelY + 7 < scene.layout().navY,
+      `${height}px: labels clear the navigation`);
+    assert.ok(labels.some(label => String(label.value).includes('今日 0/100')));
   }
 });
 
@@ -483,11 +541,11 @@ test('home renders matching care sprite and speech before and after expiry', asy
   scene.home(state, ui);
   assert.deepEqual(pose, { expression: 'sleepy', action: 'rest' });
   assert.ok(text.includes('休息中，补充精力～'));
-  assert.ok(text.includes('今日 0/100'));
+  assert.ok(text.some(value => String(value).includes('今日 0/100')));
   state.pets.cat.dailyGrowth.earned = 100;
   text.length = 0;
   scene.home(state, ui);
-  assert.ok(text.includes('今日 100/100'));
+  assert.ok(text.some(value => String(value).includes('今日 100/100')));
   ui.expressionUntil = Date.now() - 1;
   text.length = 0;
   scene.home(state, ui);
