@@ -66,9 +66,36 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   tapId('task_go_game');
   assert.equal(game.ui.page, 'game');
   tapId('nav_collection');
+  tapId('get_coins_rabbit');
+  assert.equal(game.ui.page, 'game');
+  assert.match(game.ui.toast, /接到星星可获得爪爪币/);
+  tapId('nav_collection');
+  game.state.coins = 80;
   tapId('adopt_rabbit');
-  assert.match(game.ui.toast, /还差 \d+ 爪爪币/);
+  assert.equal(game.ui.adoptionConfirmId, 'rabbit');
+  assert.equal(game.state.coins, 80);
+  tapId('adopt_cancel');
+  assert.equal(game.ui.adoptionConfirmId, null);
+  tapId('adopt_rabbit');
+  game.state.coins = 79;
+  tapId('adopt_confirm');
+  assert.equal(game.ui.adoptionConfirmId, null);
+  assert.equal(game.state.pets.rabbit, undefined);
+  assert.equal(game.state.coins, 79);
+  tapId('get_coins_rabbit');
+  tapId('nav_collection');
+  game.state.coins = 80;
+  tapId('adopt_rabbit');
+  tapId('adopt_confirm');
+  assert.equal(game.state.coins, 0);
+  assert.equal(game.state.active, 'rabbit');
+  assert.equal(game.ui.page, 'home');
+  tapId('nav_collection');
+  tapId('current_rabbit');
+  assert.equal(game.ui.page, 'collection');
+  assert.equal(game.state.coins, 0);
   tapId('select_cat');
+  assert.equal(game.state.active, 'cat');
   tapId('nav_game');
   tapId('start_game');
   assert.equal(game.ui.playing, true);
@@ -263,7 +290,23 @@ test('essential captions remain readable on a narrow short screen', async () => 
 
   drawPage('collection');
   readable('一只喜欢晒太阳的小猫');
-  readable('领养需 ✦ 80');
+  readable('未领养 · 需 80 爪爪币');
+  readable('还差 20 爪爪币');
+  readable('获取爪爪币');
+
+  state.coins = 80;
+  drawPage('collection');
+  const price = readable('未领养 · 需 80 爪爪币');
+  const adoptionButton = scene.buttons.find(button => button.id === 'adopt_rabbit');
+  assert.ok(adoptionButton);
+  assert.ok((adoptionButton.y - price.y - price.size / 2) * scene.scale >= 3,
+    'affordable price stays above the adoption button on a short screen');
+  ui.adoptionConfirmId = 'rabbit';
+  drawPage('collection');
+  readable('用 80 爪爪币领养糯米？');
+  readable('领养后剩余 0 爪爪币');
+  assert.ok(scene.buttons.some(button => button.id === 'adopt_confirm'));
+  ui.adoptionConfirmId = null;
 
   drawPage('tasks');
   readable(TASKS[0].label);

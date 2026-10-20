@@ -109,10 +109,28 @@ export function settleTime(state, now = Date.now()) {
 }
 
 export function adopt(state, id, now = Date.now()) {
-  const species = SPECIES.find(item => item.id === id);
-  if (!species || state.pets[id] || state.coins < species.cost) return false;
-  state.coins -= species.cost;
+  const cost = adoptionCost(state, id);
+  if (cost === null || state.pets[id] || state.coins < cost) return false;
+  state.coins -= cost;
   state.pets[id] = makePet(id, now);
+  state.active = id;
+  return true;
+}
+
+export function adoptionCost(state, id) {
+  return SPECIES.find(item => item.id === id)?.cost ?? null;
+}
+
+export function petCardState(state, id) {
+  const cost = adoptionCost(state, id);
+  if (cost === null) return null;
+  if (state.pets[id]) return { kind: state.active === id ? 'current' : 'owned', cost };
+  const missing = Math.max(0, cost - state.coins);
+  return { kind: missing ? 'short' : 'affordable', cost, missing };
+}
+
+export function selectPet(state, id) {
+  if (!state.pets[id] || state.active === id) return false;
   state.active = id;
   return true;
 }

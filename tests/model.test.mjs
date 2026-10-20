@@ -2,7 +2,38 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { initialState, hydrate, adopt, care, daily, miniReward,
   STORAGE_KEY, SAVE_VERSION, TASKS, dayKey, ensureTasks, recordTask, claimTask,
-  settleTime, getDailyGrowth, MAX_DAILY_GROWTH } from '../js/model.js';
+  settleTime, getDailyGrowth, MAX_DAILY_GROWTH, petCardState,
+  selectPet } from '../js/model.js';
+
+test('pet cards distinguish ownership from the sole companion and charge once', () => {
+  const now = new Date(2026, 9, 20, 10).getTime();
+  const state = initialState(now);
+  assert.equal(state.active, null);
+  assert.equal(petCardState(state, 'cat').kind, 'affordable');
+  assert.deepEqual(petCardState(state, 'rabbit'),
+    { kind: 'short', cost: 80, missing: 20 });
+  assert.equal(adopt(state, 'cat', now), true);
+  assert.equal(petCardState(state, 'cat').kind, 'current');
+  assert.equal(selectPet(state, 'rabbit'), false);
+
+  state.coins = 80;
+  assert.equal(petCardState(state, 'rabbit').kind, 'affordable');
+  assert.equal(adopt(state, 'rabbit', now), true);
+  assert.equal(state.coins, 0);
+  assert.equal(adopt(state, 'rabbit', now), false);
+  assert.equal(state.coins, 0);
+  assert.equal(petCardState(state, 'rabbit').kind, 'current');
+  assert.equal(petCardState(state, 'cat').kind, 'owned');
+  assert.equal(selectPet(state, 'rabbit'), false);
+  assert.equal(selectPet(state, 'cat'), true);
+  assert.equal(petCardState(state, 'cat').kind, 'current');
+  assert.equal(petCardState(state, 'rabbit').kind, 'owned');
+
+  const loaded = hydrate({ ...state, active: 'missing' }, now);
+  assert.ok(loaded.pets[loaded.active]);
+  assert.equal([ 'cat', 'rabbit' ].filter(id =>
+    petCardState(loaded, id).kind === 'current').length, 1);
+});
 
 test('free adoption, care, switching and persistence', () => {
   const state = initialState(1000);

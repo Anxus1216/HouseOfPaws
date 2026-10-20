@@ -1,4 +1,5 @@
-import { SPECIES, TASKS, canDaily, getDailyGrowth, MAX_DAILY_GROWTH } from './model.js';
+import { SPECIES, TASKS, canDaily, getDailyGrowth, MAX_DAILY_GROWTH,
+  petCardState } from './model.js';
 import { petDisplay } from './pet-display.js';
 import { CARE_ACTIONS, MIN_PLAY_ENERGY_REMAINING } from './care-actions.js';
 import { PET_FIELDS } from './debug-editor.js';
@@ -55,7 +56,7 @@ const HEADER_COIN = Object.freeze({ x: 274, topOffset: 3, width: 69, height: 32 
 const WELCOME_MIN_EXTENSION = 70;
 const WELCOME_HEIGHT_EXTENSION_RATE = .25;
 // Collection rows grow in height and spacing as the layout ratio approaches one.
-const COLLECTION_ROW_BASE_HEIGHT = 135;
+const COLLECTION_ROW_BASE_HEIGHT = 150;
 const COLLECTION_ROW_EXTRA_HEIGHT = 25;
 const COLLECTION_ROW_BASE_GAP = 9;
 const COLLECTION_ROW_EXTRA_GAP = 2;
@@ -609,9 +610,10 @@ export default class Scene {
     const gap = COLLECTION_ROW_BASE_GAP + COLLECTION_ROW_EXTRA_GAP * ratio;
     SPECIES.forEach((spec, i) => {
       const y = sceneY + i * (rowH + gap);
-      const owned = !!state.pets[spec.id];
-      const selected = state.active === spec.id;
-      if (selected) this.box(20, y, 350, rowH, 19, C.wash);
+      const card = petCardState(state, spec.id);
+      const owned = card.kind === 'current' || card.kind === 'owned';
+      const selected = card.kind === 'current';
+      if (selected) this.box(20, y, 350, rowH, 19, C.wash, C.coral, 1.5);
       else this.box(20, y + rowH - 1, 350, 1, 1, C.line);
       const thumbY = y + 12;
       this.box(32, thumbY, 112, rowH - 24, 17,
@@ -619,17 +621,45 @@ export default class Scene {
       const petSize = (rowH - 28) / 300;
       this.pet(spec.id, 88, y + rowH - 21 - petSize * 130, petSize, this.time);
       this.readableText(spec.type, 155, y + 31, 10, C.muted);
-      this.text(spec.name, 155, y + 56, 20, C.ink, 'left', 'bold');
+      this.text(owned ? state.pets[spec.id].name : spec.name,
+        155, y + 56, 20, C.ink, 'left', 'bold');
       this.readableText(spec.line, 155, y + 81, 10, C.muted);
-      this.readableText(owned ? `LV. ${state.pets[spec.id].level} · 陪伴中` :
-        spec.cost ? `领养需 ✦ ${spec.cost}` : '免费领养', 155, y + rowH - 24, 10, C.coral);
-      this.button(owned ? 'select_' + spec.id : 'adopt_' + spec.id,
-        282, y + rowH - 40, 76, 29,
-        owned ? selected ? '陪伴中' : '去陪伴' : state.coins >= spec.cost ? '领养' : '去领币',
+      if (owned) {
+        this.readableText(`Lv. ${state.pets[spec.id].level} · ${selected ? '当前陪伴' : '已领养'}`,
+          155, y + rowH - 24, 10, C.coral);
+      } else {
+        this.readableText(card.cost ? `未领养 · 需 ${card.cost} 爪爪币` : '免费领养',
+          155, y + rowH - 52, 10, C.coral);
+        if (card.kind === 'short') this.readableText(`还差 ${card.missing} 爪爪币`,
+          155, y + rowH - 19, 10, C.coral, 'left', 'bold');
+      }
+      const actionId = selected ? 'current_' + spec.id : owned ? 'select_' + spec.id :
+        card.kind === 'short' ? 'get_coins_' + spec.id : 'adopt_' + spec.id;
+      this.button(actionId, 276, y + rowH - 40, 82, 29,
+        owned ? selected ? '陪伴中' : '切换陪伴' :
+          card.kind === 'short' ? '获取爪爪币' : '领养',
         selected ? C.coral : C.paper, selected ? '#FFF' : C.brown,
         selected ? null : C.line, 10);
     });
     this.nav('collection');
+  }
+
+  adoptionConfirm(state, speciesId) {
+    const species = SPECIES.find(item => item.id === speciesId);
+    const card = petCardState(state, speciesId);
+    if (!species || !card) return;
+    this.dim(); this.buttons = [];
+    const y = this.h / 2 - 117;
+    this.box(36, y, 318, 234, 24, C.paper);
+    this.text(`用 ${card.cost} 爪爪币领养${species.name}？`,
+      195, y + 52, 18, C.ink, 'center', 'bold');
+    this.readableText('确认后将成为当前陪伴',
+      195, y + 88, 12, C.brown, 'center');
+    this.readableText(card.kind === 'short' ? `还差 ${card.missing} 爪爪币` :
+      `领养后剩余 ${state.coins - card.cost} 爪爪币`,
+      195, y + 121, 12, C.muted, 'center');
+    this.button('adopt_confirm', 65, y + 152, 260, 40, '确认领养', C.coral, '#FFF');
+    this.button('adopt_cancel', 65, y + 199, 260, 27, '再看看', C.paper, C.brown);
   }
 
   welcome(state, ui) {
@@ -986,6 +1016,7 @@ export default class Scene {
     else this.home(state, ui);
     this.toast(ui);
     if (state.active && ui.guideStep > 0) this.guide(ui.guideStep);
+    if (ui.adoptionConfirmId) this.adoptionConfirm(state, ui.adoptionConfirmId);
     if (ui.showSettings) this.settings(state, ui);
     if (ui.debugEditor) this.debugEditor(state, ui);
   }

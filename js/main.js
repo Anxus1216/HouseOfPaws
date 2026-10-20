@@ -9,7 +9,7 @@ import { canvasBacking } from './canvas-resolution.js';
 import { logInfo, logWarn, logError } from './logger.js';
 import { SPECIES, STORAGE_KEY, hydrate, adopt, care, daily, miniReward,
   ensureTasks, recordTask, claimTask, settleTime, getDailyGrowth,
-  MAX_DAILY_GROWTH, SAVE_VERSION, TASKS } from './model.js';
+  MAX_DAILY_GROWTH, SAVE_VERSION, TASKS, petCardState, selectPet } from './model.js';
 
 const STAT_LABELS = { hunger: '饱腹', clean: '清洁', happy: '快乐', energy: '精力' };
 // Idle pet scenes need fewer redraws; 50 ms gives them a 20 FPS cap.
@@ -32,6 +32,7 @@ export default class Main {
     this.ui = { page: 'home', speech: '', toast: '', toastUntil: 0,
       playing: false, paused: false, score: 0, remaining: 20, stars: [], basketX: 195,
       gameResult: '', gameGrowth: '', guideStep: this.state.guideStep, showSettings: false,
+      adoptionConfirmId: null,
       debugEnabled: options.debugEnabled === true || DEBUG_ENABLED,
       debugEditor: null, debugDraft: null, debugKeyboard: null,
       expression: 'normal', expressionUntil: 0, action: '', statDelta: '' };
@@ -143,6 +144,27 @@ export default class Main {
     this.needsDraw = true;
   }
 
+  completeAdoption(speciesId) {
+    if (adopt(this.state, speciesId)) {
+      const species = SPECIES.find(item => item.id === speciesId);
+      logInfo('pet.adopted', { species: speciesId, coins: this.state.coins });
+      this.ui.page = 'home'; this.ui.speech = '终于见到你啦！';
+      this.ui.expression = 'happy'; this.ui.expressionUntil = Date.now() + FEEDBACK_MS.tap;
+      this.ui.action = ''; this.ui.statDelta = '';
+      this.notice(speciesId === 'cat' ? '欢迎新伙伴加入小屋 ♡' :
+        `欢迎${species.name}来到小屋！`);
+      this.playSound('adopt'); this.save();
+      return;
+    }
+    const card = petCardState(this.state, speciesId);
+    logInfo('pet.adoption_rejected', { species: speciesId,
+      reason: card?.kind === 'short' ? 'insufficient_coins' :
+        card?.kind === 'owned' || card?.kind === 'current' ? 'already_owned' : 'invalid_species',
+      missing: card?.missing || 0 });
+    this.notice(card?.kind === 'short' ? `还差 ${card.missing} 爪爪币` :
+      '这位伙伴已经在小屋里啦');
+  }
+
   playSound(name) {
     if (!this.state.soundEnabled || !wx.createInnerAudioContext) return;
     try {
@@ -191,6 +213,15 @@ export default class Main {
       else if (id === 'settings_close') this.ui.showSettings = false;
       return;
     }
+    if (this.ui.adoptionConfirmId) {
+      if (id === 'adopt_cancel') this.ui.adoptionConfirmId = null;
+      else if (id === 'adopt_confirm') {
+        const speciesId = this.ui.adoptionConfirmId;
+        this.ui.adoptionConfirmId = null;
+        this.completeAdoption(speciesId);
+      }
+      return;
+    }
     if (this.state.active && this.ui.guideStep > 0) {
       if (id === 'guide_skip') this.ui.guideStep = 0;
       else if (id === 'guide_next') this.ui.guideStep = this.ui.guideStep >= 3 ? 0 : this.ui.guideStep + 1;
@@ -237,26 +268,28 @@ export default class Main {
       else if (task === 'care') this.notice('选择一种照料方式，完成今日目标');
       return;
     }
-    if (id === 'adopt_selected' || id.startsWith('adopt_')) {
-      const speciesId = id === 'adopt_selected' ? 'cat' : id.slice(6);
-      if (adopt(this.state, speciesId)) {
-        logInfo('pet.adopted', { species: speciesId, coins: this.state.coins });
-        this.ui.page = 'home'; this.ui.speech = '终于见到你啦！';
-        this.ui.expression = 'happy'; this.ui.expressionUntil = Date.now() + FEEDBACK_MS.tap;
-        this.ui.action = ''; this.ui.statDelta = '';
-        this.notice('欢迎新伙伴加入小屋 ♡'); this.playSound('adopt'); this.save();
-      } else {
-        const species = SPECIES.find(item => item.id === speciesId);
-        const missing = Math.max(0, (species && species.cost || 0) - this.state.coins);
-        logInfo('pet.adoption_rejected', { species: speciesId,
-          reason: this.state.pets[speciesId] ? 'already_owned' :
-            missing ? 'insufficient_coins' : 'invalid_species', missing });
-        this.notice(missing ? `还差 ${missing} 爪爪币，玩游戏可以赚取` : '这位伙伴已经在小屋里啦');
+    if (id === 'adopt_selected') { this.completeAdoption('cat'); return; }
+    if (id.startsWith('get_coins_')) {
+      this.ui.page = 'game';
+      this.notice('玩星星接接乐，接到星星可获得爪爪币');
+      return;
+    }
+    if (id.startsWith('adopt_')) {
+      const speciesId = id.slice(6);
+      const card = petCardState(this.state, speciesId);
+      if (card?.kind === 'affordable' && card.cost > 0) {
+        this.ui.adoptionConfirmId = speciesId;
+      } else if (card?.kind === 'affordable') this.completeAdoption(speciesId);
+      else if (card?.kind === 'short') {
+        this.ui.page = 'game';
+        this.notice('玩星星接接乐，接到星星可获得爪爪币');
       }
       return;
     }
+    if (id.startsWith('current_')) return;
     if (id.startsWith('select_')) {
-      this.state.active = id.slice(7);
+      const speciesId = id.slice(7);
+      if (!selectPet(this.state, speciesId)) return;
       logInfo('pet.selected', { species: this.state.active });
       this.ui.page = 'home'; this.ui.speech = ''; this.ui.expressionUntil = 0;
       this.ui.action = ''; this.ui.statDelta = '';
@@ -525,7 +558,7 @@ export default class Main {
   }
 
   isAnimated() {
-    if (this.ui.showSettings || this.ui.debugEditor ||
+    if (this.ui.showSettings || this.ui.adoptionConfirmId || this.ui.debugEditor ||
         (this.state.active && this.ui.guideStep > 0)) return false;
     if (!this.state.active) return true;
     return this.ui.page === 'home' || this.ui.page === 'collection' ||
