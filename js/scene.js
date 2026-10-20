@@ -1,8 +1,9 @@
 import { SPECIES, TASKS, canDaily, getDailyGrowth, MAX_DAILY_GROWTH,
-  petCardState, DAILY_GIFT_COINS } from './model.js';
+  petCardState, DAILY_GIFT_COINS, careBlock } from './model.js';
 import { coinWaysLayout, COIN_WAYS_ROW_STEP } from './coin-ways-layout.js';
 import { petDisplay } from './pet-display.js';
-import { CARE_ACTIONS, MIN_PLAY_ENERGY_REMAINING } from './care-actions.js';
+import { CARE_ACTIONS } from './care-actions.js';
+import { careShortReason } from './care-reasons.js';
 import { PET_FIELDS } from './debug-editor.js';
 import { readViewport } from './viewport.js';
 import { logInfo, logWarn, logError } from './logger.js';
@@ -514,7 +515,7 @@ export default class Scene {
     c.restore();
   }
 
-  homeActions(state, pet, layout) {
+  homeActions(state, layout) {
     const c = this.ctx;
     c.save(); c.shadowColor = 'rgba(75,46,28,.15)'; c.shadowBlur = 12; c.shadowOffsetY = 3;
     this.box(layout.dockX, layout.dockY, layout.dockW, HOME_LAYOUT.dockHeight,
@@ -524,19 +525,18 @@ export default class Scene {
     HOME_ACTIONS.forEach((action, index) => {
       const effect = CARE_ACTIONS[action.id];
       const x = layout.dockX + columnWidth * (index + .5);
-      const unavailable = Math.round(pet[effect.target]) >= 100 ||
-        state.coins < effect.cost ||
-        (action.id === 'play' &&
-          pet.energy + effect.changes.energy < MIN_PLAY_ENERGY_REMAINING);
+      const block = careBlock(state, action.id);
+      const unavailable = !!block;
       const iconY = layout.dockY + 22;
       const iconColor = unavailable ? '#AC9A89' : action.color;
       const iconFill = unavailable ? '#E9DFD2' : action.fill;
       this.circle(x, iconY, 15, iconFill);
       this.careIcon(action.icon, x, iconY, iconColor);
       this.readableText(action.label, x, layout.dockY + 45, 11,
-        unavailable ? C.muted : C.brown, 'center', 'bold');
-      this.readableText(unavailable ? '暂不可用' : effect.cost ? `✦ ${effect.cost}` : '免费',
-        x, layout.dockY + 64, 9, C.muted, 'center');
+        C.brown, 'center', 'bold');
+      this.readableText(careShortReason(block, action.id, this.scale < 1) ||
+        (effect.cost ? `✦ ${effect.cost}` : '免费'),
+      x, layout.dockY + 64, 9, unavailable ? C.brown : C.muted, 'center');
       this.buttons.push({ id: action.id,
         x: layout.dockX + index * columnWidth + 2,
         y: layout.dockY + 2, w: columnWidth - 4, h: HOME_LAYOUT.dockHeight - 4 });
@@ -583,7 +583,7 @@ export default class Scene {
       if (twoLines) this.text(lines[1], sceneCenterX, feedbackY + 33,
         11, C.brown, 'center', 'bold');
     }
-    this.homeActions(state, pet, layout);
+    this.homeActions(state, layout);
     this.homeStats(pet, layout);
     this.nav('home');
   }

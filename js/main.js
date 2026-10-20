@@ -8,6 +8,7 @@ import { readViewport, sameViewport } from './viewport.js';
 import { canvasBacking } from './canvas-resolution.js';
 import { coinWays } from './coin-ways.js';
 import { coinWaysLayout } from './coin-ways-layout.js';
+import { careFullReason } from './care-reasons.js';
 import { logInfo, logWarn, logError } from './logger.js';
 import { SPECIES, STORAGE_KEY, hydrate, adopt, care, daily, miniReward,
   ensureTasks, recordTask, claimTask, settleTime, getDailyGrowth,
@@ -379,7 +380,7 @@ export default class Main {
         logInfo(result.error ? 'care.rejected' : 'care.completed',
           { action: id, pet: this.state.active, reason: result.error || undefined,
             xp: result.xp ?? 0, leveled: !!result.leveled });
-        this.notice(result.error || result.label);
+        this.notice(result.block ? careFullReason(result.block, id, pet.name) : result.label);
         if (!result.error) {
           this.lastCareAt = now;
           this.ui.speech = ACTION_SPEECH[id];

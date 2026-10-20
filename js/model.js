@@ -137,17 +137,29 @@ export function selectPet(state, id) {
   return true;
 }
 
-export function careBlockReason(state, action) {
+export function careBlock(state, action) {
   const pet = state.pets[state.active];
-  if (!pet) return '没有陪伴萌宠';
+  if (!pet) return { kind: 'no_pet' };
   const effect = CARE_ACTIONS[action];
-  if (!effect) return '无法执行该照料';
-  if (Math.round(pet[effect.target]) >= 100) return effect.fullMessage;
-  if (state.coins < effect.cost) return '爪爪币不够啦';
+  if (!effect) return { kind: 'invalid_action' };
+  if (Math.round(pet[effect.target]) >= 100) return { kind: 'target_full' };
   if (action === 'play' && pet.energy + effect.changes.energy < MIN_PLAY_ENERGY_REMAINING) {
-    return '先让宝贝休息一下吧';
+    return { kind: 'energy_low' };
   }
+  if (state.coins < effect.cost) return { kind: 'insufficient_coins', missing: effect.cost - state.coins };
   return null;
+}
+
+function careBlockMessage(block, action) {
+  if (!block) return null;
+  if (block.kind === 'target_full') return CARE_ACTIONS[action].fullMessage;
+  if (block.kind === 'energy_low') return '先让宝贝休息一下吧';
+  if (block.kind === 'insufficient_coins') return '爪爪币不够啦';
+  return block.kind === 'no_pet' ? '没有陪伴萌宠' : '无法执行该照料';
+}
+
+export function careBlockReason(state, action) {
+  return careBlockMessage(careBlock(state, action), action);
 }
 
 export function addXp(pet, amount) {
@@ -187,8 +199,8 @@ function awardGrowth(pet, amount, now) {
 export function care(state, action, now = Date.now()) {
   const pet = state.pets[state.active];
   if (!pet) return null;
-  const blocked = careBlockReason(state, action);
-  if (blocked) return { error: blocked };
+  const block = careBlock(state, action);
+  if (block) return { error: careBlockMessage(block, action), block };
   const effect = CARE_ACTIONS[action];
   state.coins -= effect.cost;
   STATS.forEach(key => { if (effect.changes[key]) pet[key] = clamp(pet[key] + effect.changes[key], 0, 100); });

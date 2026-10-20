@@ -55,6 +55,16 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   assert.ok(game.ui.expressionUntil - Date.now() > 2000);
   assert.equal(game.ui.speech, '吃饱啦！');
   assert.equal(game.state.tasks.progress.care, 1);
+  const coinsAfterFeed = game.state.coins;
+  const actionsAfterFeed = game.state.pets.cat.actions;
+  const soundsAfterFeed = played.length;
+  game.lastCareAt = 0;
+  tapId('feed');
+  assert.equal(game.ui.toast, '奶糖已经吃饱啦');
+  assert.equal(game.state.coins, coinsAfterFeed);
+  assert.equal(game.state.pets.cat.actions, actionsAfterFeed);
+  assert.equal(game.state.tasks.progress.care, 1);
+  assert.equal(played.length, soundsAfterFeed);
   game.state.pets.cat.dailyGrowth.earned = 96;
   game.lastCareAt = 0;
   tapId('play');
