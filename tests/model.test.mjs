@@ -4,6 +4,39 @@ import { initialState, hydrate, adopt, care, daily, miniReward,
   STORAGE_KEY, SAVE_VERSION, TASKS, dayKey, ensureTasks, recordTask, claimTask,
   settleTime, getDailyGrowth, MAX_DAILY_GROWTH, petCardState,
   selectPet } from '../js/model.js';
+import { coinWays } from '../js/coin-ways.js';
+
+test('coin routes separate claimable rewards from actions and refresh with balance and date', () => {
+  const now = new Date(2026, 9, 20, 10).getTime();
+  const state = initialState(now);
+  adopt(state, 'cat', now);
+  let offer = coinWays(state, 'rabbit', now);
+  assert.equal(offer.title, '领养糯米还差 20 爪爪币');
+  assert.deepEqual(offer.ways.map(way => way.id), ['daily', 'do_tasks', 'game']);
+  assert.match(offer.ways[1].title, /最高可得 \+40/);
+  assert.match(offer.ways[2].hint, /最多 \+30.*可能 \+0/);
+
+  state.tasks.progress.care = 1;
+  offer = coinWays(state, 'rabbit', now);
+  assert.deepEqual(offer.ways.map(way => way.id),
+    ['daily', 'claim_tasks', 'do_tasks', 'game']);
+  assert.match(offer.ways[1].title, /共 \+10/);
+  assert.match(offer.ways[2].title, /最高可得 \+30/);
+
+  state.lastDaily = dayKey(now);
+  state.tasks.claimed.care = true;
+  offer = coinWays(state, 'rabbit', now);
+  assert.deepEqual(offer.ways.map(way => way.id), ['do_tasks', 'game']);
+  state.tasks.date = dayKey(now - 86400000);
+  state.tasks.claimed.care = false;
+  offer = coinWays(state, 'rabbit', now);
+  assert.deepEqual(offer.ways.map(way => way.id), ['do_tasks', 'game']);
+  assert.match(offer.ways[0].title, /最高可得 \+40/);
+  state.tasks.date = dayKey(now + 86400000);
+  assert.deepEqual(coinWays(state, 'rabbit', now).ways.map(way => way.id), ['game']);
+  state.coins = 80;
+  assert.equal(coinWays(state, 'rabbit', now), null);
+});
 
 test('pet cards distinguish ownership from the sole companion and charge once', () => {
   const now = new Date(2026, 9, 20, 10).getTime();

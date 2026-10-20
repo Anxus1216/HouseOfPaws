@@ -6,10 +6,13 @@ import { DEBUG_ENABLED } from './debug-config.generated.js';
 import { createDebugDraft, draftChanged, commitDebugDraft, PET_FIELDS } from './debug-editor.js';
 import { readViewport, sameViewport } from './viewport.js';
 import { canvasBacking } from './canvas-resolution.js';
+import { coinWays } from './coin-ways.js';
+import { coinWaysLayout } from './coin-ways-layout.js';
 import { logInfo, logWarn, logError } from './logger.js';
 import { SPECIES, STORAGE_KEY, hydrate, adopt, care, daily, miniReward,
   ensureTasks, recordTask, claimTask, settleTime, getDailyGrowth,
-  MAX_DAILY_GROWTH, SAVE_VERSION, TASKS, petCardState, selectPet } from './model.js';
+  MAX_DAILY_GROWTH, SAVE_VERSION, TASKS, petCardState, selectPet,
+  DAILY_GIFT_COINS, MAX_COINS } from './model.js';
 
 const STAT_LABELS = { hunger: '饱腹', clean: '清洁', happy: '快乐', energy: '精力' };
 // Idle pet scenes need fewer redraws; 50 ms gives them a 20 FPS cap.
@@ -33,12 +36,14 @@ export default class Main {
       playing: false, paused: false, score: 0, remaining: 20, stars: [], basketX: 195,
       gameResult: '', gameGrowth: '', guideStep: this.state.guideStep, showSettings: false,
       adoptionConfirmId: null,
+      coinWaysForId: null, coinWaysScroll: 0,
       debugEnabled: options.debugEnabled === true || DEBUG_ENABLED,
       debugEditor: null, debugDraft: null, debugKeyboard: null,
       expression: 'normal', expressionUntil: 0, action: '', statDelta: '' };
     this.lastFrame = Date.now();
     this.lastSave = Date.now();
     this.lastCareAt = 0;
+    this.coinWayTouch = null;
     this.sounds = {};
     this.needsDraw = true;
     this.lastAnimationDraw = 0;
@@ -86,6 +91,7 @@ export default class Main {
     if (fieldChanged) {
       if (this.ui.playing) this.ui.paused = true;
       this.debugTouch = null;
+      this.coinWayTouch = null;
     }
     const backing = canvasBacking(viewport);
     if (this.canvas.width !== backing.width || this.canvas.height !== backing.height) {
@@ -108,7 +114,7 @@ export default class Main {
       });
     }
     this.lastFrame = Date.now();
-    this.scene.draw(this.state, this.ui);
+    this.draw();
     this.needsDraw = false;
     return true;
   }
@@ -165,6 +171,41 @@ export default class Main {
       '这位伙伴已经在小屋里啦');
   }
 
+  openCoinWays(speciesId) {
+    if (!coinWays(this.state, speciesId)) return;
+    this.ui.coinWaysForId = speciesId;
+    this.ui.coinWaysScroll = 0;
+    this.needsDraw = true;
+  }
+
+  closeCoinWays() {
+    this.ui.coinWaysForId = null;
+    this.ui.coinWaysScroll = 0;
+    this.coinWayTouch = null;
+    this.needsDraw = true;
+  }
+
+  currentCoinWays(now = Date.now()) {
+    if (!this.ui.coinWaysForId) return null;
+    const offer = coinWays(this.state, this.ui.coinWaysForId, now);
+    if (!offer) this.closeCoinWays();
+    return offer;
+  }
+
+  draw() {
+    this.scene.draw(this.state, this.ui, this.currentCoinWays());
+  }
+
+  chooseCoinWay(id) {
+    if (id === 'coin_ways_close') { this.closeCoinWays(); return; }
+    const offer = this.currentCoinWays();
+    if (!offer) { this.closeCoinWays(); return; }
+    const way = offer.ways.find(item => 'coin_way_' + item.id === id && item.page);
+    if (!way) return;
+    this.closeCoinWays();
+    this.ui.page = way.page;
+  }
+
   playSound(name) {
     if (!this.state.soundEnabled || !wx.createInnerAudioContext) return;
     try {
@@ -211,6 +252,11 @@ export default class Main {
         this.save();
       } else if (id === 'debug_open' && this.ui.debugEnabled) this.openDebugEditor();
       else if (id === 'settings_close') this.ui.showSettings = false;
+      return;
+    }
+    if (this.ui.coinWaysForId) {
+      if (!this.currentCoinWays()) return;
+      this.coinWayTouch = { startY: p.y, lastY: p.y, startId: id, moved: false };
       return;
     }
     if (this.ui.adoptionConfirmId) {
@@ -270,8 +316,7 @@ export default class Main {
     }
     if (id === 'adopt_selected') { this.completeAdoption('cat'); return; }
     if (id.startsWith('get_coins_')) {
-      this.ui.page = 'game';
-      this.notice('玩星星接接乐，接到星星可获得爪爪币');
+      this.openCoinWays(id.slice(10));
       return;
     }
     if (id.startsWith('adopt_')) {
@@ -280,10 +325,7 @@ export default class Main {
       if (card?.kind === 'affordable' && card.cost > 0) {
         this.ui.adoptionConfirmId = speciesId;
       } else if (card?.kind === 'affordable') this.completeAdoption(speciesId);
-      else if (card?.kind === 'short') {
-        this.ui.page = 'game';
-        this.notice('玩星星接接乐，接到星星可获得爪爪币');
-      }
+      else if (card?.kind === 'short') this.openCoinWays(speciesId);
       return;
     }
     if (id.startsWith('current_')) return;
@@ -297,10 +339,10 @@ export default class Main {
     }
     if (id === 'daily') {
       if (daily(this.state)) {
-        logInfo('reward.daily_claimed', { coins: 30, balance: this.state.coins });
-        this.notice('领取成功：+30 爪爪币'); this.save();
+        logInfo('reward.daily_claimed', { coins: DAILY_GIFT_COINS, balance: this.state.coins });
+        this.notice(`领取成功：+${DAILY_GIFT_COINS} 爪爪币`); this.save();
       } else {
-        logInfo('reward.daily_rejected', { reason: this.state.coins > 999999 - 30 ?
+        logInfo('reward.daily_rejected', { reason: this.state.coins > MAX_COINS - DAILY_GIFT_COINS ?
           'wallet_full' : 'already_claimed' });
         this.notice('今天已经领取过啦，明天再来吧');
       }
@@ -373,6 +415,22 @@ export default class Main {
       this.debugTouch.lastY = p.y;
       return;
     }
+    if (this.ui.coinWaysForId) {
+      if (!this.coinWayTouch) return;
+      const p = this.coords(event);
+      if (!p) return;
+      if (Math.abs(p.y - this.coinWayTouch.startY) > 5) this.coinWayTouch.moved = true;
+      const offer = this.currentCoinWays();
+      if (!offer) return;
+      const viewport = coinWaysLayout(this.scene.h, offer.ways.length);
+      if (this.coinWayTouch.moved && p.y >= viewport.top && p.y <= viewport.bottom) {
+        this.ui.coinWaysScroll = Math.max(0, Math.min(viewport.maxScroll,
+          this.ui.coinWaysScroll + this.coinWayTouch.lastY - p.y));
+        this.needsDraw = true;
+      }
+      this.coinWayTouch.lastY = p.y;
+      return;
+    }
     if (!this.ui.playing || this.ui.paused || this.ui.page !== 'game') return;
     const p = this.coords(event);
     if (p) {
@@ -382,6 +440,16 @@ export default class Main {
 
   touchEnd(event) {
     if (this.syncViewport() && this.viewportFieldChanged) return;
+    if (this.ui.coinWaysForId) {
+      const touch = this.coinWayTouch;
+      this.coinWayTouch = null;
+      if (!touch || touch.moved) return;
+      const p = this.coords(event);
+      if (!p) return;
+      const id = this.scene.hit(p.x, p.y);
+      if (id === touch.startId) this.chooseCoinWay(id);
+      return;
+    }
     if (!this.ui.debugEditor || !this.debugTouch) return;
     const touch = this.debugTouch;
     this.debugTouch = null;
@@ -558,7 +626,8 @@ export default class Main {
   }
 
   isAnimated() {
-    if (this.ui.showSettings || this.ui.adoptionConfirmId || this.ui.debugEditor ||
+    if (this.ui.showSettings || this.ui.adoptionConfirmId || this.ui.coinWaysForId ||
+        this.ui.debugEditor ||
         (this.state.active && this.ui.guideStep > 0)) return false;
     if (!this.state.active) return true;
     return this.ui.page === 'home' || this.ui.page === 'collection' ||
@@ -595,7 +664,7 @@ export default class Main {
     if (this.visible && (this.needsDraw ||
         (animated && (gameAnimating ||
           now - this.lastAnimationDraw >= PET_ANIMATION_INTERVAL_MS)))) {
-      if (this.needsDraw) this.scene.draw(this.state, this.ui);
+      if (this.needsDraw) this.draw();
       else this.scene.drawAnimation(this.state, this.ui);
       this.lastAnimationDraw = now;
       this.needsDraw = false;

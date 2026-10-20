@@ -9,13 +9,15 @@ export const SPECIES = [
 export const STORAGE_KEY = 'paw_house_save_v1';
 export const SAVE_VERSION = 3;
 export const MAX_DAILY_GROWTH = 100;
+export const DAILY_GIFT_COINS = 30;
+export const GAME_MAX_COINS = 30;
 export const TASKS = [
   { id: 'care', label: '照料萌宠 1 次', target: 1, reward: 10 },
   { id: 'interact', label: '和萌宠互动 1 次', target: 1, reward: 10 },
   { id: 'game', label: '完成接星星 1 局', target: 1, reward: 20 },
 ];
 const STATS = ['hunger', 'clean', 'happy', 'energy'];
-const MAX_COINS = 999999;
+export const MAX_COINS = 999999;
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const dateOrder = key => {
   if (typeof key !== 'string' || !/^\d{4}-\d{1,2}-\d{1,2}$/.test(key)) return -1;
@@ -135,6 +137,19 @@ export function selectPet(state, id) {
   return true;
 }
 
+export function careBlockReason(state, action) {
+  const pet = state.pets[state.active];
+  if (!pet) return '没有陪伴萌宠';
+  const effect = CARE_ACTIONS[action];
+  if (!effect) return '无法执行该照料';
+  if (Math.round(pet[effect.target]) >= 100) return effect.fullMessage;
+  if (state.coins < effect.cost) return '爪爪币不够啦';
+  if (action === 'play' && pet.energy + effect.changes.energy < MIN_PLAY_ENERGY_REMAINING) {
+    return '先让宝贝休息一下吧';
+  }
+  return null;
+}
+
 export function addXp(pet, amount) {
   if (pet.level >= 99) { pet.xp = 0; return false; }
   pet.xp += amount;
@@ -172,13 +187,9 @@ function awardGrowth(pet, amount, now) {
 export function care(state, action, now = Date.now()) {
   const pet = state.pets[state.active];
   if (!pet) return null;
+  const blocked = careBlockReason(state, action);
+  if (blocked) return { error: blocked };
   const effect = CARE_ACTIONS[action];
-  if (!effect) return { error: '无法执行该照料' };
-  if (Math.round(pet[effect.target]) >= 100) return { error: effect.fullMessage };
-  if (state.coins < effect.cost) return { error: '爪爪币不够啦' };
-  if (action === 'play' && pet.energy + effect.changes.energy < MIN_PLAY_ENERGY_REMAINING) {
-    return { error: '先让宝贝休息一下吧' };
-  }
   state.coins -= effect.cost;
   STATS.forEach(key => { if (effect.changes[key]) pet[key] = clamp(pet[key] + effect.changes[key], 0, 100); });
   pet.actions++;
@@ -201,6 +212,13 @@ export function ensureTasks(state, now = Date.now()) {
   return state.tasks;
 }
 
+// Read today's task status without changing a save during route discovery.
+export function taskSnapshot(state, now = Date.now()) {
+  const order = dateOrder(state.tasks?.date);
+  const today = dateOrder(dayKey(now));
+  return order > today ? null : order === today ? state.tasks : freshTasks(now);
+}
+
 export function recordTask(state, id, now = Date.now()) {
   const task = TASKS.find(item => item.id === id);
   if (!task) return false;
@@ -221,16 +239,21 @@ export function claimTask(state, id, now = Date.now()) {
   return { reward: task.reward };
 }
 
-export function canDaily(state, now = Date.now()) {
+export function dailyAvailability(state, now = Date.now()) {
   const key = dayKey(now);
-  return dateOrder(state.lastDaily) < dateOrder(key) && state.coins <= MAX_COINS - 30;
+  if (dateOrder(state.lastDaily) >= dateOrder(key)) return 'claimed';
+  return state.coins <= MAX_COINS - DAILY_GIFT_COINS ? 'claimable' : 'wallet_full';
+}
+
+export function canDaily(state, now = Date.now()) {
+  return dailyAvailability(state, now) === 'claimable';
 }
 
 export function daily(state, now = Date.now()) {
   if (!canDaily(state, now)) return false;
   const key = dayKey(now);
   state.lastDaily = key;
-  state.coins += 30;
+  state.coins += DAILY_GIFT_COINS;
   return true;
 }
 
@@ -238,7 +261,7 @@ export function miniReward(state, score, now = Date.now()) {
   const pet = state.pets[state.active];
   if (!pet) return null;
   score = validInteger(score, 0, 0, 999999);
-  const coins = Math.min(30, Math.max(0, score) * 3, MAX_COINS - state.coins);
+  const coins = Math.min(GAME_MAX_COINS, Math.max(0, score) * 3, MAX_COINS - state.coins);
   state.coins += coins;
   pet.happy = clamp(pet.happy + Math.min(20, score * 3), 0, 100);
   const { xp, leveled } = awardGrowth(pet, Math.min(25, score * 3), now);

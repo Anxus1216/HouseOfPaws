@@ -1,5 +1,6 @@
 import { SPECIES, TASKS, canDaily, getDailyGrowth, MAX_DAILY_GROWTH,
-  petCardState } from './model.js';
+  petCardState, DAILY_GIFT_COINS } from './model.js';
+import { coinWaysLayout, COIN_WAYS_ROW_STEP } from './coin-ways-layout.js';
 import { petDisplay } from './pet-display.js';
 import { CARE_ACTIONS, MIN_PLAY_ENERGY_REMAINING } from './care-actions.js';
 import { PET_FIELDS } from './debug-editor.js';
@@ -662,6 +663,46 @@ export default class Scene {
     this.button('adopt_cancel', 65, y + 199, 260, 27, '再看看', C.paper, C.brown);
   }
 
+  coinWaysModal(offer, scroll) {
+    this.dim(); this.buttons = [];
+    const { modalY, modalHeight, top, bottom, listHeight, maxScroll } =
+      coinWaysLayout(this.h, offer.ways.length);
+    const safeScroll = clamp(scroll || 0, 0, maxScroll);
+    this.box(28, modalY, 334, modalHeight, 24, C.paper);
+    this.text(offer.title, 195, modalY + 39, 18, C.ink, 'center', 'bold');
+    this.readableText('选择一种获取方式', 195, modalY + 68, 12, C.brown, 'center');
+    const c = this.ctx;
+    c.save();
+    try {
+      c.beginPath(); c.rect(40, top, 310, listHeight); c.clip();
+      if (!offer.ways.length) {
+        this.readableText('今天可领的奖励和游戏收益已用完',
+          195, top + 65, 12, C.brown, 'center');
+        this.readableText('明天再来看看吧', 195, top + 91, 12, C.muted, 'center');
+      }
+      offer.ways.forEach((way, index) => {
+        const rowY = top + index * COIN_WAYS_ROW_STEP - safeScroll;
+        if (rowY + 62 <= top || rowY >= bottom) return;
+        this.box(44, rowY + 2, 302, 61, 15, way.page ? C.wash : '#EFE3D3');
+        this.readableText(way.title, 57, rowY + 23, 12, C.ink, 'left', 'bold');
+        this.readableText(way.hint, 57, rowY + 45, 10, C.muted);
+        if (way.page) {
+          const hitTop = Math.max(top, rowY + 2);
+          const hitBottom = Math.min(bottom, rowY + 63);
+          this.buttons.push({ id: 'coin_way_' + way.id, x: 44, y: hitTop,
+            w: 302, h: hitBottom - hitTop });
+        }
+      });
+    } finally { c.restore(); }
+    if (maxScroll > 0) {
+      this.box(352, top, 3, listHeight, 2, C.track);
+      this.box(352, top + safeScroll / maxScroll * (listHeight - 37),
+        3, 37, 2, C.coral);
+    }
+    this.button('coin_ways_close', 65, modalY + modalHeight - 49,
+      260, 36, '再看看', C.paper, C.brown, C.line, 12);
+  }
+
   welcome(state, ui) {
     this.header(state, '欢迎来到小屋', '一起慢慢长大', '从第一位小伙伴开始', !!ui.debugEnabled);
     const { sceneY, sceneH } = this.layout();
@@ -718,7 +759,8 @@ export default class Scene {
     });
     const giftY = rowStart + TASKS.length * rowStep + 6 + extra;
     this.box(20, giftY, 350, 51, 17, C.wash);
-    this.readableText('✦  每日礼物 · +30 爪爪币', 37, giftY + 26, 11, C.brown);
+    this.readableText(`✦  每日礼物 · +${DAILY_GIFT_COINS} 爪爪币`,
+      37, giftY + 26, 11, C.brown);
     this.button('daily', 281, giftY + 11, 77, 30,
       canDaily(state) ? '领取礼物' : '明天再来',
       canDaily(state) ? C.coral : '#E6D5C0', canDaily(state) ? '#FFF' : C.muted,
@@ -1001,7 +1043,7 @@ export default class Scene {
     }
   }
 
-  draw(state, ui) {
+  draw(state, ui, coinWaysOffer = null) {
     this.resize(); this.time = Date.now() / MILLISECONDS_PER_SECOND; this.buttons = [];
     const c = this.ctx;
     c.setTransform(1, 0, 0, 1, 0, 0);
@@ -1017,6 +1059,7 @@ export default class Scene {
     this.toast(ui);
     if (state.active && ui.guideStep > 0) this.guide(ui.guideStep);
     if (ui.adoptionConfirmId) this.adoptionConfirm(state, ui.adoptionConfirmId);
+    if (coinWaysOffer) this.coinWaysModal(coinWaysOffer, ui.coinWaysScroll);
     if (ui.showSettings) this.settings(state, ui);
     if (ui.debugEditor) this.debugEditor(state, ui);
   }

@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { coinWays } from '../js/coin-ways.js';
+import { coinWaysLayout } from '../js/coin-ways-layout.js';
 
 test('game starts, adopts, navigates and renders each screen', async () => {
   const context = new Proxy({}, { get(target, key) {
@@ -18,6 +20,7 @@ test('game starts, adopts, navigates and renders each screen', async () => {
     setStorageSync: (key, value) => { saved[key] = structuredClone(value); },
     onTouchStart: callback => { handlers.touch = callback; },
     onTouchMove: callback => { handlers.move = callback; },
+    onTouchEnd: callback => { handlers.end = callback; },
     onHide: callback => { handlers.hide = callback; },
     onShow: callback => { handlers.show = callback; },
     createInnerAudioContext: () => ({ src: '', volume: 1, stop() {}, play() { played.push(this.src); } }),
@@ -28,11 +31,12 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   const clientPoint = (x, y) => ({ clientX: game.scene.offsetX + x * game.scene.scale,
     clientY: game.scene.offsetY + y * game.scene.scale });
   const tapId = id => {
-    game.scene.draw(game.state, game.ui);
+    game.draw();
     const button = game.scene.buttons.find(item => item.id === id);
     assert.ok(button, `button ${id} is visible`);
     const point = clientPoint(button.x + button.w / 2, button.y + button.h / 2);
     tap(point.clientX, point.clientY);
+    handlers.end({ changedTouches: [point] });
   };
   assert.equal(typeof handlers.touch, 'function');
   tapId('adopt_selected');
@@ -67,10 +71,47 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   assert.equal(game.ui.page, 'game');
   tapId('nav_collection');
   tapId('get_coins_rabbit');
-  assert.equal(game.ui.page, 'game');
-  assert.match(game.ui.toast, /接到星星可获得爪爪币/);
+  assert.equal(game.ui.coinWaysForId, 'rabbit');
+  assert.equal(game.ui.page, 'collection');
+  const tasksBeforeScroll = structuredClone(game.state.tasks);
+  const growthBeforeScroll = structuredClone(game.state.pets.cat.dailyGrowth);
+  const xpBeforeScroll = game.state.pets.cat.xp;
+  game.state.tasks.claimed.care = false;
+  game.state.tasks.progress.care = 1;
+  game.state.tasks.claimed.interact = false;
+  game.state.tasks.progress.interact = 0;
+  game.state.pets.cat.xp = game.state.pets.cat.level * 40 - 5;
+  game.state.pets.cat.dailyGrowth.earned = 0;
+  game.draw();
+  const list = coinWaysLayout(game.scene.h, coinWays(game.state, 'rabbit').ways.length);
+  assert.ok(list.maxScroll > 0, 'five routes can scroll inside the layer');
+  const scrollStart = clientPoint(180, list.top + 100);
+  const scrollEnd = clientPoint(180, list.top + 50);
+  handlers.touch({ touches: [scrollStart] });
+  handlers.move({ touches: [scrollEnd] });
+  game.draw();
+  handlers.end({ changedTouches: [scrollEnd] });
+  assert.ok(game.ui.coinWaysScroll > 0);
+  assert.equal(game.ui.page, 'collection', 'scrolling never selects a route');
+  tapId('coin_ways_close');
+  assert.equal(game.ui.page, 'collection');
+  game.state.tasks = tasksBeforeScroll;
+  game.state.pets.cat.dailyGrowth = growthBeforeScroll;
+  game.state.pets.cat.xp = xpBeforeScroll;
+  tapId('get_coins_rabbit');
+  tapId('coin_way_daily');
+  assert.equal(game.ui.page, 'tasks');
   tapId('nav_collection');
+  tapId('get_coins_rabbit');
+  tapId('coin_way_game');
+  assert.equal(game.ui.page, 'game');
+  assert.equal(game.ui.coinWaysForId, null);
+  tapId('nav_collection');
+  tapId('get_coins_rabbit');
   game.state.coins = 80;
+  game.draw();
+  assert.equal(game.ui.coinWaysForId, null);
+  assert.ok(game.scene.buttons.some(button => button.id === 'adopt_rabbit'));
   tapId('adopt_rabbit');
   assert.equal(game.ui.adoptionConfirmId, 'rabbit');
   assert.equal(game.state.coins, 80);
@@ -83,6 +124,7 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   assert.equal(game.state.pets.rabbit, undefined);
   assert.equal(game.state.coins, 79);
   tapId('get_coins_rabbit');
+  tapId('coin_way_game');
   tapId('nav_collection');
   game.state.coins = 80;
   tapId('adopt_rabbit');
@@ -265,7 +307,7 @@ test('essential captions remain readable on a narrow short screen', async () => 
   const drawPage = page => {
     ui.page = page;
     labels.length = 0;
-    scene.draw(state, ui);
+    scene.draw(state, ui, ui.coinWaysForId ? coinWays(state, ui.coinWaysForId) : null);
     assert.equal(scene.scale, .75);
   };
   const originalText = scene.text.bind(scene);
@@ -293,6 +335,19 @@ test('essential captions remain readable on a narrow short screen', async () => 
   readable('未领养 · 需 80 爪爪币');
   readable('还差 20 爪爪币');
   readable('获取爪爪币');
+  ui.coinWaysForId = 'rabbit';
+  drawPage('collection');
+  readable('领养糯米还差 20 爪爪币');
+  readable('领取今日礼物 · +30');
+  readable('每局最多 +30 爪爪币，可能 +0');
+  const closeCoinWays = scene.buttons.find(button => button.id === 'coin_ways_close');
+  assert.ok(closeCoinWays && closeCoinWays.y + closeCoinWays.h < scene.h,
+    'the coin routes layer keeps its close action on the short screen');
+  ui.coinWaysScroll = 999;
+  const modalUi = structuredClone(ui);
+  drawPage('collection');
+  assert.deepEqual(ui, modalUi, 'drawing the coin routes leaves UI state with Main');
+  ui.coinWaysForId = null;
 
   state.coins = 80;
   drawPage('collection');
