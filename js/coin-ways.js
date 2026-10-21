@@ -1,4 +1,4 @@
-import { SPECIES, TASKS, petCardState, taskSnapshot, dailyAvailability,
+import { SPECIES, TASKS, petCardState, taskSnapshot, taskClaimState, giftClaimState,
   careBlock, careBlockReason, getDailyGrowth, DAILY_GIFT_COINS, GAME_MAX_COINS,
   MAX_DAILY_GROWTH, MAX_COINS } from './model.js';
 import { CARE_ACTIONS } from './care-actions.js';
@@ -7,9 +7,9 @@ import { CARE_ACTIONS } from './care-actions.js';
 function availableWays(state, now) {
   const space = MAX_COINS - state.coins;
   const ways = [];
-  const gift = dailyAvailability(state, now);
-  let walletBlocked = gift === 'wallet_full';
-  if (gift === 'claimable') {
+  const gift = giftClaimState(state, now);
+  let walletBlocked = gift.kind === 'wallet_full' || gift.kind === 'space_short';
+  if (gift.kind === 'claimable') {
     ways.push({ id: 'daily', page: 'tasks',
       title: `领取今日礼物 · +${DAILY_GIFT_COINS}`, hint: '前往任务页领取' });
   }
@@ -19,13 +19,15 @@ function availableWays(state, now) {
   let unclaimedSpace = space;
   let potential = 0;
   for (const task of tasks ? TASKS : []) {
-    if (tasks.claimed[task.id]) continue;
-    if (tasks.progress[task.id] >= task.target) {
+    const status = taskClaimState(state, task.id, now);
+    if (status.kind === 'claimed') continue;
+    if (status.kind === 'claimable' || status.kind === 'space_short' ||
+        status.kind === 'wallet_full') {
       if (unclaimedSpace >= task.reward) {
         claimable += task.reward;
         unclaimedSpace -= task.reward;
       } else walletBlocked = true;
-    } else if (state.active && (task.id !== 'care' ||
+    } else if (status.kind === 'incomplete' && state.active && (task.id !== 'care' ||
         Object.keys(CARE_ACTIONS).some(action => !careBlockReason(state, action)))) {
       potential += task.reward;
     }

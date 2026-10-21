@@ -1,5 +1,6 @@
-import { SPECIES, TASKS, canDaily,
-  petCardState, DAILY_GIFT_COINS, careBlock } from './model.js';
+import { SPECIES, TASKS, taskClaimState, giftClaimState, taskSnapshot,
+  pendingDailyTaskCount, petCardState, DAILY_GIFT_COINS, careBlock } from './model.js';
+import { rewardButtonLabel } from './reward-presentation.js';
 import { coinWaysLayout, COIN_WAYS_ROW_STEP } from './coin-ways-layout.js';
 import { petDisplay } from './pet-display.js';
 import { CARE_ACTIONS } from './care-actions.js';
@@ -618,10 +619,10 @@ export default class Scene {
     }
     this.homeActions(state, layout);
     this.homeStats(pet, layout);
-    this.nav('home');
+    this.nav('home', state);
   }
 
-  nav(active) {
+  nav(active, state) {
     const y = this.layout().navY;
     this.box(20, y, 350, 1, 1, C.line);
     [['home', '⌂', '小屋'], ['collection', '♡', '萌宠'],
@@ -635,6 +636,11 @@ export default class Scene {
       this.buttons.push({ id: 'nav_' + item[0], x, y: y + 3,
         w: 87, h: NAV_HEIGHT - 7 });
     });
+    const pending = active === 'home' ? pendingDailyTaskCount(state) : 0;
+    if (pending) {
+      this.box(225, y + 3, 55, 18, 9, C.coral);
+      this.readableText(`待领 ${pending}`, 252.5, y + 12, 9, '#FFF', 'center', 'bold');
+    }
   }
 
   collection(state) {
@@ -675,7 +681,7 @@ export default class Scene {
         selected ? C.coral : C.paper, selected ? '#FFF' : C.brown,
         selected ? null : C.line, 10);
     });
-    this.nav('collection');
+    this.nav('collection', state);
   }
 
   adoptionConfirm(state, speciesId) {
@@ -747,6 +753,17 @@ export default class Scene {
       '知道啦', C.coral, '#FFF');
   }
 
+  rewardHelp(help) {
+    this.dim(); this.buttons = [];
+    const y = this.h / 2 - 112;
+    this.box(31, y, 328, 224, 24, C.paper);
+    this.text(help.title, 195, y + 38, 18, C.ink, 'center', 'bold');
+    help.lines.forEach((line, index) => this.readableText(line,
+      195, y + 83 + index * 27, 11, C.brown, 'center'));
+    this.button('reward_help_close', 65, y + 171, 260, 38,
+      '知道啦', C.coral, '#FFF');
+  }
+
   welcome(state, ui) {
     this.header(state, '欢迎来到小屋', '一起慢慢长大', '从第一位小伙伴开始', !!ui.debugEnabled);
     const { sceneY, sceneH } = this.layout();
@@ -769,12 +786,12 @@ export default class Scene {
   tasks(state) {
     this.header(state, '每日清单', '今天的小小约定', '做一点小事，换一份好心情');
     const { sceneY, ratio, extra } = this.layout();
-    const progress = state.tasks && state.tasks.progress || {};
-    const claimed = state.tasks && state.tasks.claimed || {};
+    const todayTasks = taskSnapshot(state);
+    const progress = todayTasks?.progress || {};
     const completed = TASKS.filter(task => (progress[task.id] || 0) >= task.target).length;
     this.box(20, sceneY, 350, 58, 18, '#EED7B4');
     const compact = this.scale < .9;
-    this.readableText(`今天已完成 ${completed} / ${TASKS.length}`, 38,
+    this.readableText(`今日目标 ${completed}/${TASKS.length}`, 38,
       sceneY + (compact ? 19 : 29), 14, C.brown, 'left', 'bold');
     this.readableText('把小事变成好回忆  ✦', 352,
       sceneY + (compact ? 43 : 29), 10, C.muted, 'right');
@@ -783,33 +800,40 @@ export default class Scene {
     TASKS.forEach((task, i) => {
       const y = rowStart + i * rowStep;
       const art = TASK_ART[task.id];
-      const count = clamp(Number(progress[task.id]) || 0, 0, task.target);
+      const status = taskClaimState(state, task.id);
+      const count = clamp(status.progress || 0, 0, task.target);
       const done = count >= task.target;
-      const claimedThis = !!claimed[task.id];
+      const claimedThis = status.kind === 'claimed';
       this.circle(54, y + 24, 19, art.color);
       this.text(art.mark, 54, y + 25, 20, C.coral, 'center', 'bold');
       this.text(art.title, 82, y + 17, 15, C.ink, 'left', 'bold');
-      this.readableText(claimedThis ? '今天已完成，明天继续吧' : task.label,
-        82, y + 40, 10, C.muted);
+      this.readableText(task.label, 82, y + (status.kind === 'date_guard' ? 40 : 48),
+        10, C.muted);
+      if (status.kind === 'date_guard') this.readableText('日期变化后再查看今日任务',
+        82, y + 56, 9, C.muted);
       this.readableText('✦ ' + task.reward, 354, y + 18, 10, C.coral, 'right', 'bold');
       this.readableText(`${count} / ${task.target}`, 82, y + 74, 11, C.muted);
-      this.button(claimedThis ? 'task_done_' + task.id : done ? 'claim_' + task.id :
+      this.button(claimedThis || status.kind === 'date_guard' ? 'task_done_' + task.id :
+        done ? 'claim_' + task.id :
         'task_go_' + task.id, 277, y + 62, 80, 30,
-        claimedThis ? '已领取' : done ? '领取奖励' : task.id === 'game' ? '去游戏 →' : '去完成 →',
-        claimedThis ? '#EFE3D3' : done ? C.coral : C.paper,
-        claimedThis ? C.muted : done ? '#FFF' : C.coral,
+        rewardButtonLabel(status.kind) ||
+          (task.id === 'game' ? '去游戏 →' : '去完成 →'),
+        claimedThis || status.kind === 'date_guard' ? '#EFE3D3' : done ? C.coral : C.paper,
+        claimedThis || status.kind === 'date_guard' ? C.muted : done ? '#FFF' : C.coral,
         !claimedThis && !done ? C.line : null, 10);
-      this.box(36, y + rowStep - 1, 318, 1, 1, C.line);
+      this.box(36, y + 99, 318, 1, 1, C.line);
     });
     const giftY = rowStart + TASKS.length * rowStep + 6 + extra;
+    const gift = giftClaimState(state);
     this.box(20, giftY, 350, 51, 17, C.wash);
     this.readableText(`✦  每日礼物 · +${DAILY_GIFT_COINS} 爪爪币`,
       37, giftY + 26, 11, C.brown);
     this.button('daily', 281, giftY + 11, 77, 30,
-      canDaily(state) ? '领取礼物' : '明天再来',
-      canDaily(state) ? C.coral : '#E6D5C0', canDaily(state) ? '#FFF' : C.muted,
+      rewardButtonLabel(gift.kind, true),
+      gift.kind === 'claimed' ? '#E6D5C0' : C.coral,
+      gift.kind === 'claimed' ? C.muted : '#FFF',
       null, 10);
-    this.nav('tasks');
+    this.nav('tasks', state);
   }
 
   gameField() {
@@ -865,7 +889,7 @@ export default class Scene {
     this.readableText('每局 20 秒 · 星星越多奖励越多', 21, field.bottom + 24, 10, C.muted);
     this.readableText('玩法说明  ›', 368, field.bottom + 24, 10, C.coral, 'right');
     this.buttons.push({ id: 'game_help', x: 281, y: field.bottom + 7, w: 91, h: 34 });
-    this.nav('game');
+    this.nav('game', state);
     if (ui.playing && ui.paused) {
       this.dim(); this.buttons = [];
       if (ui.quitConfirm) {
@@ -1134,6 +1158,7 @@ export default class Scene {
     if (ui.adoptionConfirmId) this.adoptionConfirm(state, ui.adoptionConfirmId);
     if (coinWaysOffer) this.coinWaysModal(coinWaysOffer, ui.coinWaysScroll);
     if (ui.showGrowthHelp) this.growthHelp();
+    if (ui.rewardHelp) this.rewardHelp(ui.rewardHelp);
     if (ui.showSettings) this.settings(state, ui);
     if (ui.debugEditor) this.debugEditor(state, ui);
   }

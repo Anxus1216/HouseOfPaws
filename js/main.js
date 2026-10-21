@@ -12,11 +12,12 @@ import { careFullReason } from './care-reasons.js';
 import { homeAdvice, homeAdviceDetail } from './home-advice.js';
 import { careGrowthFeedback } from './growth-info.js';
 import { completedGameOutcome } from './game-result.js';
+import { rewardSpaceHelp } from './reward-presentation.js';
 import { logInfo, logWarn, logError } from './logger.js';
 import { SPECIES, STORAGE_KEY, hydrate, adopt, care, daily, miniReward,
-  ensureTasks, recordTask, claimTask, settleTime,
-  SAVE_VERSION, TASKS, petCardState, selectPet,
-  DAILY_GIFT_COINS, MAX_COINS } from './model.js';
+  ensureTasks, recordTask, claimTask, taskClaimState, giftClaimState, dayKey, settleTime,
+  SAVE_VERSION, petCardState, selectPet,
+  DAILY_GIFT_COINS } from './model.js';
 
 const STAT_LABELS = { hunger: '饱腹', clean: '清洁', happy: '快乐', energy: '精力' };
 // Idle pet scenes need fewer redraws; 50 ms gives them a 20 FPS cap.
@@ -36,7 +37,8 @@ export default class Main {
       guideStep: this.state.guideStep, showSettings: false,
       adoptionConfirmId: null,
       coinWaysTarget: null, coinWaysScroll: 0,
-      showGrowthHelp: false, showHomeAdvice: true, adviceExplanation: null,
+      showGrowthHelp: false, rewardHelp: null,
+      showHomeAdvice: true, adviceExplanation: null,
       debugEnabled: options.debugEnabled === true || DEBUG_ENABLED,
       debugEditor: null, debugDraft: null, debugKeyboard: null,
       expression: 'normal', expressionUntil: 0, action: '', statDelta: '' };
@@ -66,6 +68,9 @@ export default class Main {
       this.syncViewport();
       settleTime(this.state, Date.now());
       ensureTasks(this.state);
+      if (this.ui.rewardHelp && this.ui.rewardHelp.date !== dayKey()) {
+        this.ui.rewardHelp = null;
+      }
       this.lastFrame = Date.now();
       this.visible = true;
       this.needsDraw = true;
@@ -234,6 +239,12 @@ export default class Main {
       y: (p.clientY - this.scene.offsetY) / this.scene.scale };
   }
 
+  showRewardSpaceHelp(status, gift = false) {
+    const help = rewardSpaceHelp(status, gift);
+    this.ui.rewardHelp = help && { ...help, date: dayKey() };
+    return !!help;
+  }
+
   touch(event) {
     const previousPoint = this.coords(event);
     const previousId = previousPoint && this.scene.hit(previousPoint.x, previousPoint.y);
@@ -252,6 +263,10 @@ export default class Main {
     const id = this.scene.hit(p.x, p.y);
     if (this.ui.showGrowthHelp) {
       if (id === 'home_growth_close') this.ui.showGrowthHelp = false;
+      return;
+    }
+    if (this.ui.rewardHelp) {
+      if (id === 'reward_help_close') this.ui.rewardHelp = null;
       return;
     }
     if (this.ui.showSettings) {
@@ -395,26 +410,31 @@ export default class Main {
       this.save(); return;
     }
     if (id === 'daily') {
-      if (daily(this.state)) {
+      const status = giftClaimState(this.state);
+      if (status.kind === 'claimable' && daily(this.state)) {
         logInfo('reward.daily_claimed', { coins: DAILY_GIFT_COINS, balance: this.state.coins });
         this.notice(`领取成功：+${DAILY_GIFT_COINS} 爪爪币`); this.save();
       } else {
-        logInfo('reward.daily_rejected', { reason: this.state.coins > MAX_COINS - DAILY_GIFT_COINS ?
-          'wallet_full' : 'already_claimed' });
-        this.notice('今天已经领取过啦，明天再来吧');
+        logInfo('reward.daily_rejected', { reason: status.kind });
+        if (!this.showRewardSpaceHelp(status, true)) {
+          this.notice('今日礼物已领取，明天再来吧');
+        }
       }
       return;
     }
     if (id.startsWith('claim_')) {
       const taskId = id.slice(6);
-      const result = claimTask(this.state, taskId);
-      const task = TASKS.find(item => item.id === taskId);
-      const reason = result?.reward ? undefined : !task ? 'invalid_task' :
-        this.state.tasks.claimed[taskId] ? 'already_claimed' :
-          this.state.tasks.progress[taskId] < task.target ? 'incomplete' : 'wallet_full';
+      const status = taskClaimState(this.state, taskId);
+      const result = status.kind === 'claimable' ? claimTask(this.state, taskId) : null;
       logInfo(result?.reward ? 'reward.task_claimed' : 'reward.task_rejected',
-        { task: taskId, reward: result?.reward ?? 0, reason });
-      this.notice(result && result.reward ? `任务完成：+${result.reward} 爪爪币` : '先完成任务再来领取吧');
+        { task: taskId, reward: result?.reward ?? 0,
+          reason: result?.reward ? undefined : status.kind });
+      if (result?.reward) this.notice(`领取成功：+${result.reward} 爪爪币`);
+      else {
+        if (!this.showRewardSpaceHelp(status)) this.notice(status.kind === 'claimed' ? '今日任务奖励已领取' :
+          status.kind === 'date_guard' ? '日期变化后再查看今日任务' :
+            '先完成任务再来领取吧');
+      }
       if (result && result.reward) { this.playSound('care'); this.save(); }
       return;
     }
@@ -694,7 +714,7 @@ export default class Main {
 
   isAnimated() {
     if (this.ui.showSettings || this.ui.adoptionConfirmId || this.ui.coinWaysTarget ||
-        this.ui.showGrowthHelp || this.ui.debugEditor ||
+        this.ui.showGrowthHelp || this.ui.rewardHelp || this.ui.debugEditor ||
         (this.state.active && this.ui.guideStep > 0)) return false;
     if (!this.state.active) return true;
     return this.ui.page === 'home' || this.ui.page === 'collection' ||
@@ -723,6 +743,10 @@ export default class Main {
         logInfo('tasks.reset', { date: this.state.tasks.date });
         this.needsDraw = true;
       }
+    }
+    if (this.ui.rewardHelp && this.ui.rewardHelp.date !== dayKey(now)) {
+      this.ui.rewardHelp = null;
+      this.needsDraw = true;
     }
     const wasAnimated = this.isAnimated();
     this.updateGame(dt);

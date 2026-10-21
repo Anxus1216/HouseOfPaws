@@ -112,8 +112,31 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   assert.match(game.ui.statDelta, /今日成长已满，照料仍有效/);
   tapId('pet_tap');
   assert.equal(game.state.tasks.progress.interact, 1);
+  game.draw();
+  const homeLabels = [];
+  const originalText = game.scene.text.bind(game.scene);
+  game.scene.text = (value, ...args) => { homeLabels.push(String(value)); originalText(value, ...args); };
+  game.draw();
+  assert.ok(homeLabels.includes('待领 2'));
+  game.scene.text = originalText;
   tapId('nav_tasks');
+  const coinsBeforeBlock = game.state.coins;
+  game.state.coins = 999995;
   tapId('claim_care');
+  assert.equal(game.state.coins, 999995);
+  assert.equal(game.state.tasks.claimed.care, false);
+  assert.deepEqual(game.ui.rewardHelp.lines,
+    ['还需腾出 6 爪爪币，才能领取完整奖励',
+      '今天花币后仍可领取', '换日后这笔日任务奖励会失效']);
+  assert.equal(game.ui.rewardHelp.title, '余额空间不足');
+  tapId('reward_help_close');
+  tapId('claim_care');
+  game.ui.rewardHelp.date = '2000-1-1';
+  game.loop();
+  assert.equal(game.ui.rewardHelp, null, 'old-day reward help closes after date change');
+  game.state.coins = coinsBeforeBlock;
+  tapId('claim_care');
+  assert.equal(game.ui.toast, '领取成功：+10 爪爪币');
   tapId('claim_interact');
   tapId('task_go_game');
   assert.equal(game.ui.page, 'game');
@@ -354,6 +377,77 @@ test('main actions stay reachable on a shorter portrait screen', async () => {
   }
 });
 
+test('blocked reward labels and explanation fit short and tall task screens', async () => {
+  const { default: Scene } = await import('../js/scene.js');
+  const { initialState, adopt, MAX_COINS, taskClaimState, giftClaimState } =
+    await import('../js/model.js');
+  const { rewardSpaceHelp } = await import('../js/reward-presentation.js');
+  const context = new Proxy({}, { get: () => () => {} });
+  const state = initialState();
+  adopt(state, 'cat');
+  state.tasks.progress.interact = 1;
+  for (const coins of [MAX_COINS - 4, MAX_COINS]) {
+    state.coins = coins;
+    for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }]) {
+      const scene = new Scene(context, { ...viewport });
+      const labels = [];
+      scene.text = (value, x, y, size) => labels.push({ value: String(value), x, y, size });
+      scene.draw(state, { page: 'tasks' });
+      const blockedButtons = scene.buttons.filter(button =>
+        button.id === 'claim_interact' || button.id === 'daily');
+      assert.equal(blockedButtons.length, 2);
+      assert.deepEqual(blockedButtons.map(button => [button.x, button.w]),
+        [[277, 80], [281, 77]], 'reward buttons keep their original sizes');
+      const blockedLabels = labels.filter(label => label.value === '装不下啦！');
+      assert.equal(blockedLabels.length, 2);
+      assert.ok(!labels.some(label => label.value === '今日任务奖励换日后失效' ||
+        label.value.startsWith('还需腾出 ') || label.value === '花币后今天仍可领取'),
+      'reward details appear only after opening the explanation');
+      for (const [index, button] of blockedButtons.entries()) {
+        const label = blockedLabels[index];
+        const halfWidth = label.value.length * label.size / 2;
+        assert.ok(label.x - halfWidth >= button.x && label.x + halfWidth <= button.x + button.w,
+          `${viewport.height}px blocked label fits its button`);
+        assert.ok(button.y + button.h < scene.buttons.find(item => item.id === 'nav_tasks').y,
+          `${viewport.height}px reward button stays above navigation`);
+      }
+      const taskStatus = taskClaimState(state, 'interact');
+      const help = rewardSpaceHelp(taskStatus);
+      assert.ok(help.lines.some(line => line.includes('换日后')));
+      if (coins < MAX_COINS) assert.ok(help.lines.some(line =>
+        line.includes(`还需腾出 ${taskStatus.missing} 爪爪币`)));
+      scene.draw(state, { page: 'tasks', rewardHelp: help });
+      assert.deepEqual(scene.buttons.map(button => button.id), ['reward_help_close']);
+      const close = scene.buttons[0];
+      assert.ok(close.y >= 0 && close.y + close.h <= scene.h);
+      const giftStatus = giftClaimState(state);
+      const giftHelp = rewardSpaceHelp(giftStatus, true);
+      assert.ok(giftHelp.lines.some(line => line.includes('换日后')));
+      if (coins < MAX_COINS) assert.ok(giftHelp.lines.some(line =>
+        line.includes(`还需腾出 ${giftStatus.missing} 爪爪币`)));
+    }
+  }
+});
+
+test('clock rollback does not offer a task action for future save progress', async () => {
+  const { default: Scene } = await import('../js/scene.js');
+  const { initialState, adopt, dayKey } = await import('../js/model.js');
+  const context = new Proxy({}, { get: () => () => {} });
+  const scene = new Scene(context, { width: 390, height: 680 });
+  const state = initialState();
+  adopt(state, 'cat');
+  state.tasks.date = dayKey(Date.now() + 2 * 86400000);
+  state.tasks.progress.care = 1;
+  const labels = [];
+  scene.text = value => labels.push(String(value));
+  scene.draw(state, { page: 'tasks' });
+  assert.ok(labels.includes('日期待确认'));
+  assert.ok(labels.includes('日期变化后再查看今日任务'));
+  assert.ok(scene.buttons.some(button => button.id === 'task_done_care'));
+  assert.ok(!scene.buttons.some(button => button.id === 'claim_care' ||
+    button.id === 'task_go_care'));
+});
+
 test('animation redraw stays in the scene area and preserves touch targets', async () => {
   const { default: Scene } = await import('../js/scene.js');
   const { initialState, adopt } = await import('../js/model.js');
@@ -455,7 +549,7 @@ test('essential captions remain readable on a narrow short screen', async () => 
   drawPage('tasks');
   readable(TASKS[0].label);
   readable('去完成 →');
-  const summary = labels.find(item => item.value.startsWith('今天已完成'));
+  const summary = labels.find(item => item.value.startsWith('今日目标'));
   const slogan = readable('把小事变成好回忆  ✦');
   assert.ok(summary && slogan.y - summary.y >= 20,
     'task summary and decorative caption use separate lines on a short screen');

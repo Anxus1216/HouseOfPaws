@@ -235,30 +235,57 @@ export function taskSnapshot(state, now = Date.now()) {
   return order > today ? null : order === today ? state.tasks : freshTasks(now);
 }
 
+export function taskClaimState(state, id, now = Date.now()) {
+  const task = TASKS.find(item => item.id === id);
+  if (!task) return { kind: 'invalid' };
+  const tasks = taskSnapshot(state, now);
+  if (!tasks) return { kind: 'date_guard', reward: task.reward, progress: 0 };
+  const progress = tasks.progress[id] || 0;
+  if (tasks.claimed[id]) return { kind: 'claimed', reward: task.reward, progress };
+  if (progress < task.target) return { kind: 'incomplete', reward: task.reward, progress };
+  const space = MAX_COINS - state.coins;
+  if (space >= task.reward) return { kind: 'claimable', reward: task.reward, progress };
+  return { kind: space <= 0 ? 'wallet_full' : 'space_short',
+    reward: task.reward, progress, missing: task.reward - space };
+}
+
+export function pendingDailyTaskCount(state, now = Date.now()) {
+  const tasks = taskSnapshot(state, now);
+  return tasks ? TASKS.filter(task => !tasks.claimed[task.id] &&
+    tasks.progress[task.id] >= task.target).length : 0;
+}
+
 export function recordTask(state, id, now = Date.now()) {
   const task = TASKS.find(item => item.id === id);
   if (!task) return false;
   const tasks = ensureTasks(state, now);
+  if (tasks.date !== dayKey(now)) return false;
   if (tasks.progress[id] >= task.target) return false;
   tasks.progress[id]++;
   return true;
 }
 
 export function claimTask(state, id, now = Date.now()) {
-  const task = TASKS.find(item => item.id === id);
-  if (!task) return null;
+  const status = taskClaimState(state, id, now);
+  if (status.kind !== 'claimable') return null;
   const tasks = ensureTasks(state, now);
-  if (tasks.claimed[id] || tasks.progress[id] < task.target ||
-      state.coins > MAX_COINS - task.reward) return null;
   tasks.claimed[id] = true;
-  state.coins += task.reward;
-  return { reward: task.reward };
+  state.coins += status.reward;
+  return { reward: status.reward };
+}
+
+export function giftClaimState(state, now = Date.now()) {
+  const key = dayKey(now);
+  if (dateOrder(state.lastDaily) >= dateOrder(key)) return { kind: 'claimed' };
+  const space = MAX_COINS - state.coins;
+  if (space >= DAILY_GIFT_COINS) return { kind: 'claimable' };
+  return { kind: space <= 0 ? 'wallet_full' : 'space_short',
+    missing: DAILY_GIFT_COINS - space };
 }
 
 export function dailyAvailability(state, now = Date.now()) {
-  const key = dayKey(now);
-  if (dateOrder(state.lastDaily) >= dateOrder(key)) return 'claimed';
-  return state.coins <= MAX_COINS - DAILY_GIFT_COINS ? 'claimable' : 'wallet_full';
+  const kind = giftClaimState(state, now).kind;
+  return kind === 'space_short' ? 'wallet_full' : kind;
 }
 
 export function canDaily(state, now = Date.now()) {
@@ -266,7 +293,7 @@ export function canDaily(state, now = Date.now()) {
 }
 
 export function daily(state, now = Date.now()) {
-  if (!canDaily(state, now)) return false;
+  if (giftClaimState(state, now).kind !== 'claimable') return false;
   const key = dayKey(now);
   state.lastDaily = key;
   state.coins += DAILY_GIFT_COINS;

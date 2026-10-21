@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { initialState, hydrate, adopt, care, daily, miniReward,
   STORAGE_KEY, SAVE_VERSION, TASKS, dayKey, ensureTasks, recordTask, claimTask,
+  taskClaimState, giftClaimState, pendingDailyTaskCount,
   settleTime, getDailyGrowth, MAX_DAILY_GROWTH, MAX_COINS, petCardState,
   selectPet } from '../js/model.js';
 import { coinWays } from '../js/coin-ways.js';
@@ -348,6 +349,60 @@ test('full wallet cannot claim an unrecoverable partial reward', () => {
   assert.deepEqual(claimTask(state, 'care', now), { reward: 10 });
   assert.equal(daily(state, now), true);
   assert.equal(state.coins, 999999);
+});
+
+test('task and gift status preserve full rewards, priority, and pending count', () => {
+  const today = new Date(2026, 9, 14, 10).getTime();
+  const tomorrow = new Date(2026, 9, 15, 10).getTime();
+  const state = initialState(today);
+  assert.equal(pendingDailyTaskCount(state, today), 0);
+  assert.equal(taskClaimState(state, 'care', today).kind, 'incomplete');
+  recordTask(state, 'care', today);
+  assert.equal(pendingDailyTaskCount(state, today), 1);
+  state.coins = MAX_COINS - 4;
+  assert.deepEqual(taskClaimState(state, 'care', today),
+    { kind: 'space_short', reward: 10, progress: 1, missing: 6 });
+  assert.equal(claimTask(state, 'care', today), null);
+  assert.equal(state.tasks.claimed.care, false);
+  state.coins = MAX_COINS;
+  assert.equal(taskClaimState(state, 'care', today).kind, 'wallet_full');
+  assert.equal(pendingDailyTaskCount(state, today), 1);
+  state.coins = MAX_COINS - 10;
+  assert.equal(taskClaimState(state, 'care', today).kind, 'claimable');
+  assert.deepEqual(claimTask(state, 'care', today), { reward: 10 });
+  assert.equal(state.coins, MAX_COINS);
+  assert.equal(claimTask(state, 'care', today), null);
+  assert.equal(taskClaimState(state, 'care', today).kind, 'claimed');
+  assert.equal(pendingDailyTaskCount(state, today), 0);
+
+  state.coins = MAX_COINS - 24;
+  assert.deepEqual(giftClaimState(state, today), { kind: 'space_short', missing: 6 });
+  assert.equal(daily(state, today), false);
+  state.coins -= 6;
+  assert.equal(giftClaimState(state, today).kind, 'claimable');
+  assert.equal(daily(state, today), true);
+  assert.equal(state.coins, MAX_COINS);
+  assert.equal(daily(state, today), false);
+  assert.equal(giftClaimState(state, today).kind, 'claimed');
+
+  recordTask(state, 'game', today);
+  assert.equal(pendingDailyTaskCount(state, today), 1);
+  assert.equal(pendingDailyTaskCount(state, tomorrow), 0);
+  assert.equal(taskClaimState(state, 'game', tomorrow).kind, 'incomplete');
+  assert.equal(claimTask(state, 'game', tomorrow), null);
+});
+
+test('clock rollback cannot advance or claim future task progress', () => {
+  const yesterday = new Date(2026, 9, 13, 10).getTime();
+  const today = new Date(2026, 9, 14, 10).getTime();
+  const state = initialState(today);
+  recordTask(state, 'care', today);
+  assert.equal(pendingDailyTaskCount(state, yesterday), 0);
+  assert.equal(taskClaimState(state, 'care', yesterday).kind, 'date_guard');
+  assert.equal(recordTask(state, 'interact', yesterday), false);
+  assert.equal(claimTask(state, 'care', yesterday), null);
+  assert.equal(state.tasks.progress.interact, 0);
+  assert.equal(state.tasks.claimed.care, false);
 });
 
 test('invalid mini-game score cannot corrupt currency or pet stats', () => {
