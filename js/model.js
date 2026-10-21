@@ -11,6 +11,10 @@ export const SAVE_VERSION = 3;
 export const MAX_DAILY_GROWTH = 100;
 export const DAILY_GIFT_COINS = 30;
 export const GAME_MAX_COINS = 30;
+const GAME_REWARD_PER_STAR = 3;
+const GAME_MAX_HAPPY = 20;
+const GAME_MAX_GROWTH = 25;
+export const LEVEL_UP_BONUS_COINS = 15;
 export const TASKS = [
   { id: 'care', label: '照料萌宠 1 次', target: 1, reward: 10 },
   { id: 'interact', label: '和萌宠互动 1 次', target: 1, reward: 10 },
@@ -207,7 +211,7 @@ export function care(state, action, now = Date.now()) {
   pet.actions++;
   state.totalActions++;
   const { xp, leveled } = awardGrowth(pet, effect.xp, now);
-  const bonus = leveled ? Math.min(15, MAX_COINS - state.coins) : 0;
+  const bonus = leveled ? Math.min(LEVEL_UP_BONUS_COINS, MAX_COINS - state.coins) : 0;
   state.coins += bonus;
   return { label: leveled ? `升级啦！获得 ${bonus} 爪爪币` : effect.label,
     leveled, xp, bonus };
@@ -273,11 +277,16 @@ export function miniReward(state, score, now = Date.now()) {
   const pet = state.pets[state.active];
   if (!pet) return null;
   score = validInteger(score, 0, 0, 999999);
-  const coins = Math.min(GAME_MAX_COINS, Math.max(0, score) * 3, MAX_COINS - state.coins);
-  state.coins += coins;
-  pet.happy = clamp(pet.happy + Math.min(20, score * 3), 0, 100);
-  const { xp, leveled } = awardGrowth(pet, Math.min(25, score * 3), now);
-  const bonus = leveled ? Math.min(15, MAX_COINS - state.coins) : 0;
+  const scoreReward = score * GAME_REWARD_PER_STAR;
+  const requestedGameCoins = Math.min(GAME_MAX_COINS, scoreReward);
+  const happyBefore = pet.happy;
+  pet.happy = clamp(pet.happy + Math.min(GAME_MAX_HAPPY, scoreReward), 0, 100);
+  const happyDelta = pet.happy - happyBefore;
+  const { xp, leveled } = awardGrowth(pet, Math.min(GAME_MAX_GROWTH, scoreReward), now);
+  // Level rewards take the available wallet space before game rewards.
+  const bonus = leveled ? Math.min(LEVEL_UP_BONUS_COINS, MAX_COINS - state.coins) : 0;
   state.coins += bonus;
-  return leveled ? { coins, leveled, bonus, xp } : { coins, leveled, xp };
+  const coins = Math.min(requestedGameCoins, MAX_COINS - state.coins);
+  state.coins += coins;
+  return { coins, leveled, bonus, xp, happyDelta, requestedGameCoins };
 }

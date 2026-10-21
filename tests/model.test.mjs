@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { initialState, hydrate, adopt, care, daily, miniReward,
   STORAGE_KEY, SAVE_VERSION, TASKS, dayKey, ensureTasks, recordTask, claimTask,
-  settleTime, getDailyGrowth, MAX_DAILY_GROWTH, petCardState,
+  settleTime, getDailyGrowth, MAX_DAILY_GROWTH, MAX_COINS, petCardState,
   selectPet } from '../js/model.js';
 import { coinWays } from '../js/coin-ways.js';
 
@@ -353,9 +353,67 @@ test('full wallet cannot claim an unrecoverable partial reward', () => {
 test('invalid mini-game score cannot corrupt currency or pet stats', () => {
   const state = initialState();
   adopt(state, 'cat');
-  assert.deepEqual(miniReward(state, NaN), { coins: 0, leveled: false, xp: 0 });
+  assert.deepEqual(miniReward(state, NaN), {
+    coins: 0, leveled: false, bonus: 0, xp: 0, happyDelta: 0,
+    requestedGameCoins: 0,
+  });
   assert.equal(state.coins, 60);
   assert.equal(state.pets.cat.happy, 72);
+});
+
+test('zero-star mini-game has no rewards or stat changes', () => {
+  const state = initialState();
+  adopt(state, 'cat');
+  const before = { coins: state.coins, happy: state.pets.cat.happy,
+    level: state.pets.cat.level, xp: state.pets.cat.xp };
+  assert.deepEqual(miniReward(state, 0), {
+    coins: 0, leveled: false, bonus: 0, xp: 0, happyDelta: 0,
+    requestedGameCoins: 0,
+  });
+  assert.deepEqual({ coins: state.coins, happy: state.pets.cat.happy,
+    level: state.pets.cat.level, xp: state.pets.cat.xp }, before);
+});
+
+test('level reward takes wallet space before game coins, including partial payouts', () => {
+  for (const [walletSpace, expectedBonus, expectedGameCoins] of [
+    [20, 15, 5], [1, 1, 0], [0, 0, 0],
+  ]) {
+    const state = initialState();
+    adopt(state, 'cat');
+    state.coins = MAX_COINS - walletSpace;
+    state.pets.cat.xp = 39;
+    const result = miniReward(state, 10);
+    assert.equal(result.leveled, true);
+    assert.equal(result.bonus, expectedBonus);
+    assert.equal(result.coins, expectedGameCoins);
+    assert.equal(result.requestedGameCoins, 30);
+    assert.equal(result.happyDelta, 20);
+    assert.equal(result.xp, 25);
+    assert.equal(state.coins, MAX_COINS - walletSpace + expectedBonus + expectedGameCoins);
+  }
+});
+
+test('mini-game reports actual happiness and growth at their caps', () => {
+  const now = new Date(2026, 9, 20, 10).getTime();
+  const state = initialState(now);
+  adopt(state, 'cat', now);
+  const pet = state.pets.cat;
+  pet.happy = 99;
+  pet.dailyGrowth.earned = 99;
+  const partial = miniReward(state, 10, now);
+  assert.equal(partial.happyDelta, 1);
+  assert.equal(partial.xp, 1);
+  const capped = miniReward(state, 10, now);
+  assert.equal(capped.happyDelta, 0);
+  assert.equal(capped.xp, 0);
+  pet.level = 99;
+  pet.xp = 0;
+  pet.dailyGrowth.earned = 0;
+  const maxLevel = miniReward(state, 10, now);
+  assert.equal(maxLevel.xp, 0);
+  assert.equal(maxLevel.leveled, false);
+  assert.equal(maxLevel.bonus, 0);
+  assert.equal(maxLevel.coins, 30);
 });
 
 test('daily growth survives saves and damaged counters are repaired', () => {
