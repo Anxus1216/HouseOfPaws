@@ -6,9 +6,11 @@ import { DEBUG_ENABLED } from './debug-config.generated.js';
 import { createDebugDraft, draftChanged, commitDebugDraft, PET_FIELDS } from './debug-editor.js';
 import { readViewport, sameViewport } from './viewport.js';
 import { canvasBacking } from './canvas-resolution.js';
-import { coinWays } from './coin-ways.js';
+import { coinWays, careCoinWays } from './coin-ways.js';
 import { coinWaysLayout } from './coin-ways-layout.js';
 import { careFullReason } from './care-reasons.js';
+import { homeAdvice, homeAdviceDetail } from './home-advice.js';
+import { careGrowthFeedback } from './growth-info.js';
 import { logInfo, logWarn, logError } from './logger.js';
 import { SPECIES, STORAGE_KEY, hydrate, adopt, care, daily, miniReward,
   ensureTasks, recordTask, claimTask, settleTime, getDailyGrowth,
@@ -37,7 +39,8 @@ export default class Main {
       playing: false, paused: false, score: 0, remaining: 20, stars: [], basketX: 195,
       gameResult: '', gameGrowth: '', guideStep: this.state.guideStep, showSettings: false,
       adoptionConfirmId: null,
-      coinWaysForId: null, coinWaysScroll: 0,
+      coinWaysTarget: null, coinWaysScroll: 0,
+      showGrowthHelp: false, showHomeAdvice: true, adviceExplanation: null,
       debugEnabled: options.debugEnabled === true || DEBUG_ENABLED,
       debugEditor: null, debugDraft: null, debugKeyboard: null,
       expression: 'normal', expressionUntil: 0, action: '', statDelta: '' };
@@ -172,23 +175,27 @@ export default class Main {
       '这位伙伴已经在小屋里啦');
   }
 
-  openCoinWays(speciesId) {
-    if (!coinWays(this.state, speciesId)) return;
-    this.ui.coinWaysForId = speciesId;
+  openCoinWays(target) {
+    const offer = target?.kind === 'care' ?
+      careCoinWays(this.state, target.action) : coinWays(this.state, target);
+    if (!offer) return;
+    this.ui.coinWaysTarget = target;
     this.ui.coinWaysScroll = 0;
     this.needsDraw = true;
   }
 
   closeCoinWays() {
-    this.ui.coinWaysForId = null;
+    this.ui.coinWaysTarget = null;
     this.ui.coinWaysScroll = 0;
     this.coinWayTouch = null;
     this.needsDraw = true;
   }
 
   currentCoinWays(now = Date.now()) {
-    if (!this.ui.coinWaysForId) return null;
-    const offer = coinWays(this.state, this.ui.coinWaysForId, now);
+    if (!this.ui.coinWaysTarget) return null;
+    const target = this.ui.coinWaysTarget;
+    const offer = target?.kind === 'care' ?
+      careCoinWays(this.state, target.action, now) : coinWays(this.state, target, now);
     if (!offer) this.closeCoinWays();
     return offer;
   }
@@ -247,6 +254,10 @@ export default class Main {
       return;
     }
     const id = this.scene.hit(p.x, p.y);
+    if (this.ui.showGrowthHelp) {
+      if (id === 'home_growth_close') this.ui.showGrowthHelp = false;
+      return;
+    }
     if (this.ui.showSettings) {
       if (id === 'sound_toggle') {
         this.state.soundEnabled = !this.state.soundEnabled;
@@ -255,7 +266,7 @@ export default class Main {
       else if (id === 'settings_close') this.ui.showSettings = false;
       return;
     }
-    if (this.ui.coinWaysForId) {
+    if (this.ui.coinWaysTarget) {
       if (!this.currentCoinWays()) return;
       this.coinWayTouch = { startY: p.y, lastY: p.y, startId: id, moved: false };
       return;
@@ -305,6 +316,32 @@ export default class Main {
     if (id.startsWith('nav_')) {
       if (this.ui.playing && id !== 'nav_game') this.ui.paused = true;
       this.ui.page = id.slice(4);
+      this.ui.adviceExplanation = null;
+      return;
+    }
+    if (id === 'home_growth_help') {
+      this.ui.showGrowthHelp = true;
+      this.ui.adviceExplanation = null;
+      return;
+    }
+    if (id === 'home_advice_close') {
+      this.ui.showHomeAdvice = false;
+      this.ui.adviceExplanation = null;
+      return;
+    }
+    if (id === 'home_advice') {
+      if (!this.ui.showHomeAdvice) return;
+      const advice = homeAdvice(this.state);
+      if (!advice) return;
+      if (advice.kind === 'coins') {
+        this.openCoinWays({ kind: 'care', action: advice.action });
+      } else {
+        this.ui.adviceExplanation = {
+          detail: homeAdviceDetail(advice), compactDetail: homeAdviceDetail(advice, true),
+          until: Date.now() + 2200 };
+        this.ui.toast = '';
+        this.ui.toastUntil = 0;
+      }
       return;
     }
     if (id === 'game_help') { this.notice('左右滑动篮子接星星，20 秒后结算奖励'); return; }
@@ -336,6 +373,7 @@ export default class Main {
       logInfo('pet.selected', { species: this.state.active });
       this.ui.page = 'home'; this.ui.speech = ''; this.ui.expressionUntil = 0;
       this.ui.action = ''; this.ui.statDelta = '';
+      this.ui.adviceExplanation = null;
       this.save(); return;
     }
     if (id === 'daily') {
@@ -364,6 +402,7 @@ export default class Main {
     }
     if (id === 'start_game') { this.startGame(); return; }
     if (id === 'pet_tap') {
+      this.ui.adviceExplanation = null;
       this.ui.speech = ['好喜欢你呀 ♡', '再摸摸我的头~', '今天也要开心哦！'][Math.floor(Math.random() * 3)];
       this.ui.expression = 'happy'; this.ui.expressionUntil = Date.now() + FEEDBACK_MS.tap;
       this.ui.action = ''; this.ui.statDelta = '';
@@ -371,6 +410,7 @@ export default class Main {
       return;
     }
     if (['feed', 'wash', 'play', 'rest'].includes(id)) {
+      this.ui.adviceExplanation = null;
       const now = Date.now();
       if (now - this.lastCareAt < 350) return;
       const pet = this.state.pets[this.state.active];
@@ -380,7 +420,8 @@ export default class Main {
         logInfo(result.error ? 'care.rejected' : 'care.completed',
           { action: id, pet: this.state.active, reason: result.error || undefined,
             xp: result.xp ?? 0, leveled: !!result.leveled });
-        this.notice(result.block ? careFullReason(result.block, id, pet.name) : result.label);
+        this.notice(result.block ? careFullReason(result.block, id, pet.name) :
+          result.leveled ? `${pet.name}升到 Lv.${pet.level} 啦` : result.label);
         if (!result.error) {
           this.lastCareAt = now;
           this.ui.speech = ACTION_SPEECH[id];
@@ -392,8 +433,13 @@ export default class Main {
             const change = Math.round(pet[stat]) - Math.round(before[stat]);
             return change ? `${STAT_LABELS[stat]} ${change > 0 ? '+' : ''}${change}` : '';
           }).filter(Boolean);
-          const cost = effect.cost ? ` · 爪爪币 -${effect.cost}` : '';
-          this.ui.statDelta = `${changes.join(' · ')}|${growthFeedback(pet, result.xp, effect.xp, now)}${cost}`;
+          if (effect.cost) changes.push(`爪爪币 -${effect.cost}`);
+          const lines = [changes.join(' · ')];
+          if (result.leveled) lines.push(`${pet.name}升到 Lv.${pet.level} 啦`);
+          lines.push(careGrowthFeedback(pet, result.xp, now));
+          if (result.leveled) lines.push(result.bonus ?
+            `升级返币 +${result.bonus} 爪爪币` : '钱包已满，升级返币 0');
+          this.ui.statDelta = lines.join('|');
           recordTask(this.state, 'care'); this.playSound(result.leveled ? 'level' : 'care'); this.save();
         }
       }
@@ -416,7 +462,7 @@ export default class Main {
       this.debugTouch.lastY = p.y;
       return;
     }
-    if (this.ui.coinWaysForId) {
+    if (this.ui.coinWaysTarget) {
       if (!this.coinWayTouch) return;
       const p = this.coords(event);
       if (!p) return;
@@ -441,7 +487,7 @@ export default class Main {
 
   touchEnd(event) {
     if (this.syncViewport() && this.viewportFieldChanged) return;
-    if (this.ui.coinWaysForId) {
+    if (this.ui.coinWaysTarget) {
       const touch = this.coinWayTouch;
       this.coinWayTouch = null;
       if (!touch || touch.moved) return;
@@ -627,8 +673,8 @@ export default class Main {
   }
 
   isAnimated() {
-    if (this.ui.showSettings || this.ui.adoptionConfirmId || this.ui.coinWaysForId ||
-        this.ui.debugEditor ||
+    if (this.ui.showSettings || this.ui.adoptionConfirmId || this.ui.coinWaysTarget ||
+        this.ui.showGrowthHelp || this.ui.debugEditor ||
         (this.state.active && this.ui.guideStep > 0)) return false;
     if (!this.state.active) return true;
     return this.ui.page === 'home' || this.ui.page === 'collection' ||

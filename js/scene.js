@@ -1,9 +1,11 @@
-import { SPECIES, TASKS, canDaily, getDailyGrowth, MAX_DAILY_GROWTH,
+import { SPECIES, TASKS, canDaily,
   petCardState, DAILY_GIFT_COINS, careBlock } from './model.js';
 import { coinWaysLayout, COIN_WAYS_ROW_STEP } from './coin-ways-layout.js';
 import { petDisplay } from './pet-display.js';
 import { CARE_ACTIONS } from './care-actions.js';
 import { careShortReason } from './care-reasons.js';
+import { homeAdvice, homeAdviceText } from './home-advice.js';
+import { growthSummary, GROWTH_HELP_LINES } from './growth-info.js';
 import { PET_FIELDS } from './debug-editor.js';
 import { readViewport } from './viewport.js';
 import { logInfo, logWarn, logError } from './logger.js';
@@ -37,6 +39,8 @@ const HOME_LAYOUT = Object.freeze({
   gaugeAboveNav: 84, labelAboveNav: 16,
   petScaleHeight: 450,
 });
+const HOME_INFO = Object.freeze({ x: 32, width: 326, top: 12,
+  growthHeight: 61, adviceTop: 79, adviceHeight: 28, speechTop: 114 });
 const HOME_STATS = Object.freeze([
   { label: '饱腹', field: 'hunger', color: '#F0734E' },
   { label: '清洁', field: 'clean', color: '#25B8C3' },
@@ -559,29 +563,57 @@ export default class Scene {
       display.expression, display.action);
     this.buttons.push({ id: 'pet_tap', x: 82, y: layout.sceneY + 4,
       w: 225, h: layout.dockY - layout.sceneY - 4 });
-    const infoX = HOME_LAYOUT.sceneX + 12, infoY = layout.sceneY + 12;
-    this.box(infoX, infoY, 245, 43, 12, 'rgba(255,249,239,.94)');
+    const infoX = HOME_INFO.x, infoY = layout.sceneY + HOME_INFO.top;
+    this.box(infoX, infoY, HOME_INFO.width, HOME_INFO.growthHeight,
+      12, 'rgba(255,249,239,.94)');
     this.text(`${pet.name} · LV. ${pet.level}`, infoX + 11, infoY + 14,
       13, C.brown, 'left', 'bold');
-    const needed = pet.level * 40;
-    const growth = pet.level >= 99 ? '已满级' : `成长 ${pet.xp}/${needed}`;
-    this.readableText(`${growth} · 今日 ${getDailyGrowth(pet)}/${MAX_DAILY_GROWTH}`,
-      infoX + 11, infoY + 32, 10, C.muted);
+    const growth = growthSummary(pet);
+    this.readableText(growth.progress, infoX + 11, infoY + 33, 11, C.brown);
+    this.readableText(`${growth.today}  ›`, infoX + 11, infoY + 51, 10, C.muted);
+    this.buttons.push({ id: 'home_growth_help', x: infoX, y: infoY + 23,
+      w: HOME_INFO.width, h: HOME_INFO.growthHeight - 23 });
+    if (ui.showHomeAdvice !== false) {
+      const advice = homeAdvice(state);
+      const adviceY = layout.sceneY + HOME_INFO.adviceTop;
+      const closeWidth = 38;
+      this.box(infoX, adviceY, HOME_INFO.width, HOME_INFO.adviceHeight,
+        13, 'rgba(255,249,239,.94)');
+      const explaining = ui.adviceExplanation?.until > Date.now();
+      const fullAdvice = explaining ? ui.adviceExplanation.detail : homeAdviceText(advice);
+      const fontSize = Math.max(11, 11 / this.scale);
+      const c = this.ctx;
+      c.save(); c.font = `bold ${fontSize}px sans-serif`;
+      const measured = c.measureText?.(fullAdvice)?.width;
+      c.restore();
+      const compact = (advice.kind === 'coins' && this.scale < 1) ||
+        (measured ?? fullAdvice.length * fontSize) > HOME_INFO.width - closeWidth - 16;
+      const displayAdvice = explaining ?
+        (compact ? ui.adviceExplanation.compactDetail : fullAdvice) : homeAdviceText(advice, compact);
+      this.readableText(displayAdvice, infoX + 11,
+        adviceY + HOME_INFO.adviceHeight / 2, 11, C.brown, 'left', 'bold');
+      this.text('×', infoX + HOME_INFO.width - closeWidth / 2,
+        adviceY + HOME_INFO.adviceHeight / 2, 17, C.muted, 'center');
+      this.buttons.push({ id: 'home_advice', x: infoX, y: adviceY,
+        w: HOME_INFO.width - closeWidth, h: HOME_INFO.adviceHeight });
+      this.buttons.push({ id: 'home_advice_close', x: infoX + HOME_INFO.width - closeWidth,
+        y: adviceY - 4, w: closeWidth, h: HOME_INFO.adviceHeight + 8 });
+    }
     if (display.speech) {
-      this.box(103, layout.sceneY + 64, 184, 30, 15, C.paper);
-      this.text(display.speech.slice(0, 13), sceneCenterX, layout.sceneY + 80,
+      this.box(103, layout.sceneY + HOME_INFO.speechTop, 184, 30, 15, C.paper);
+      this.text(display.speech.slice(0, 13), sceneCenterX,
+        layout.sceneY + HOME_INFO.speechTop + 16,
         11, C.brown, 'center');
     }
     if (display.statDelta) {
       const lines = display.statDelta.split('|');
-      const twoLines = lines.length > 1;
-      const feedbackH = twoLines ? 43 : 27;
+      const feedbackH = lines.length > 1 ? 16 + lines.length * 19 : 27;
       const feedbackY = layout.dockY - feedbackH - 8;
       this.box(43, feedbackY, 304, feedbackH, 13, '#FFF5E7');
       this.text(lines[0], sceneCenterX, feedbackY + 14,
-        twoLines ? 10 : 12, C.coral, 'center', 'bold');
-      if (twoLines) this.text(lines[1], sceneCenterX, feedbackY + 33,
-        11, C.brown, 'center', 'bold');
+        lines.length > 1 ? 10 : 12, C.coral, 'center', 'bold');
+      lines.slice(1).forEach((line, index) => this.text(line, sceneCenterX,
+        feedbackY + 33 + index * 19, 11, C.brown, 'center', 'bold'));
     }
     this.homeActions(state, layout);
     this.homeStats(pet, layout);
@@ -701,6 +733,17 @@ export default class Scene {
     }
     this.button('coin_ways_close', 65, modalY + modalHeight - 49,
       260, 36, '再看看', C.paper, C.brown, C.line, 12);
+  }
+
+  growthHelp() {
+    this.dim(); this.buttons = [];
+    const y = this.h / 2 - 105;
+    this.box(36, y, 318, 210, 24, C.paper);
+    this.text('关于成长', 195, y + 40, 18, C.ink, 'center', 'bold');
+    GROWTH_HELP_LINES.forEach((line, index) => this.readableText(line,
+      195, y + 85 + index * 27, 12, C.brown, 'center'));
+    this.button('home_growth_close', 65, y + 157, 260, 38,
+      '知道啦', C.coral, '#FFF');
   }
 
   welcome(state, ui) {
@@ -1060,6 +1103,7 @@ export default class Scene {
     if (state.active && ui.guideStep > 0) this.guide(ui.guideStep);
     if (ui.adoptionConfirmId) this.adoptionConfirm(state, ui.adoptionConfirmId);
     if (coinWaysOffer) this.coinWaysModal(coinWaysOffer, ui.coinWaysScroll);
+    if (ui.showGrowthHelp) this.growthHelp();
     if (ui.showSettings) this.settings(state, ui);
     if (ui.debugEditor) this.debugEditor(state, ui);
   }

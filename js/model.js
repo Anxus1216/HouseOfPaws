@@ -210,7 +210,7 @@ export function care(state, action, now = Date.now()) {
   const bonus = leveled ? Math.min(15, MAX_COINS - state.coins) : 0;
   state.coins += bonus;
   return { label: leveled ? `升级啦！获得 ${bonus} 爪爪币` : effect.label,
-    leveled, xp };
+    leveled, xp, bonus };
 }
 
 export function dayKey(now = Date.now()) {

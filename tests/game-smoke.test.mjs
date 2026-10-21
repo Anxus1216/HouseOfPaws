@@ -44,14 +44,52 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   assert.ok(played.includes('audio/adopt.wav'));
   tapId('guide_skip');
   assert.equal(saved.paw_house_save_v1.guideStep, 0);
+  tapId('home_growth_help');
+  assert.equal(game.ui.showGrowthHelp, true);
+  game.draw();
+  assert.ok(game.scene.buttons.some(button => button.id === 'home_growth_close'));
+  tapId('home_growth_close');
+  assert.equal(game.ui.showGrowthHelp, false);
+  const interactBeforeAdvice = game.state.tasks.progress.interact;
+  tapId('home_advice');
+  assert.equal(game.ui.adviceExplanation.detail, '可以轻点奶糖，陪它互动一下');
+  assert.equal(game.ui.toast, '', 'advice explanation stays in the advice row instead of covering actions');
+  assert.equal(game.state.tasks.progress.interact, interactBeforeAdvice, 'advice does not interact automatically');
+  const pet = game.state.pets.cat;
+  const originalEnergy = pet.energy;
+  const actionsBeforeAdvice = pet.actions;
+  pet.energy = 20;
+  tapId('home_advice');
+  assert.equal(game.ui.adviceExplanation.detail, '想照料奶糖，可以点下方「休息」');
+  assert.equal(pet.actions, actionsBeforeAdvice, 'advice does not care automatically');
+  pet.energy = originalEnergy;
+  const originalHunger = pet.hunger;
+  const originalCoins = game.state.coins;
+  pet.hunger = 20;
+  game.state.coins = 4;
+  tapId('home_advice');
+  assert.deepEqual(game.ui.coinWaysTarget, { kind: 'care', action: 'feed' });
+  assert.equal(game.currentCoinWays().title, '喂食还差 1 爪爪币');
+  assert.equal(pet.actions, actionsBeforeAdvice);
+  tapId('coin_ways_close');
+  pet.hunger = originalHunger;
+  game.state.coins = originalCoins;
+  tapId('home_advice_close');
+  assert.equal(game.ui.showHomeAdvice, false);
+  assert.equal(game.ui.adviceExplanation, null);
+  game.draw();
+  assert.ok(!game.scene.buttons.some(button => button.id === 'home_advice' ||
+    button.id === 'home_advice_close'));
+  assert.ok(game.scene.buttons.some(button => button.id === 'home_growth_help'));
   tapId('nav_tasks');
   assert.equal(game.ui.page, 'tasks');
   tapId('task_go_care');
   assert.equal(game.ui.page, 'home');
+  assert.equal(game.ui.showHomeAdvice, false, 'manual dismissal persists across page changes');
   tapId('feed');
   assert.ok(saved.paw_house_save_v1.pets.cat.hunger > 99.99);
   assert.match(game.ui.statDelta, /饱腹 \+24 · 快乐 \+3/);
-  assert.match(game.ui.statDelta, /成长 \+10 · 爪爪币 -5/);
+  assert.match(game.ui.statDelta, /爪爪币 -5\|成长 \+10/);
   assert.ok(game.ui.expressionUntil - Date.now() > 2000);
   assert.equal(game.ui.speech, '吃饱啦！');
   assert.equal(game.state.tasks.progress.care, 1);
@@ -68,10 +106,10 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   game.state.pets.cat.dailyGrowth.earned = 96;
   game.lastCareAt = 0;
   tapId('play');
-  assert.match(game.ui.statDelta, /成长 \+4（今日已满）/);
+  assert.match(game.ui.statDelta, /成长 \+4/);
   game.lastCareAt = 0;
   tapId('wash');
-  assert.match(game.ui.statDelta, /成长 \+0（今日已满）/);
+  assert.match(game.ui.statDelta, /今日成长已满，照料仍有效/);
   tapId('pet_tap');
   assert.equal(game.state.tasks.progress.interact, 1);
   tapId('nav_tasks');
@@ -81,7 +119,7 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   assert.equal(game.ui.page, 'game');
   tapId('nav_collection');
   tapId('get_coins_rabbit');
-  assert.equal(game.ui.coinWaysForId, 'rabbit');
+  assert.equal(game.ui.coinWaysTarget, 'rabbit');
   assert.equal(game.ui.page, 'collection');
   const tasksBeforeScroll = structuredClone(game.state.tasks);
   const growthBeforeScroll = structuredClone(game.state.pets.cat.dailyGrowth);
@@ -115,12 +153,12 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   tapId('get_coins_rabbit');
   tapId('coin_way_game');
   assert.equal(game.ui.page, 'game');
-  assert.equal(game.ui.coinWaysForId, null);
+  assert.equal(game.ui.coinWaysTarget, null);
   tapId('nav_collection');
   tapId('get_coins_rabbit');
   game.state.coins = 80;
   game.draw();
-  assert.equal(game.ui.coinWaysForId, null);
+  assert.equal(game.ui.coinWaysTarget, null);
   assert.ok(game.scene.buttons.some(button => button.id === 'adopt_rabbit'));
   tapId('adopt_rabbit');
   assert.equal(game.ui.adoptionConfirmId, 'rabbit');
@@ -317,7 +355,7 @@ test('essential captions remain readable on a narrow short screen', async () => 
   const drawPage = page => {
     ui.page = page;
     labels.length = 0;
-    scene.draw(state, ui, ui.coinWaysForId ? coinWays(state, ui.coinWaysForId) : null);
+    scene.draw(state, ui, ui.coinWaysTarget ? coinWays(state, ui.coinWaysTarget) : null);
     assert.equal(scene.scale, .75);
   };
   const originalText = scene.text.bind(scene);
@@ -345,7 +383,7 @@ test('essential captions remain readable on a narrow short screen', async () => 
   readable('未领养 · 需 80 爪爪币');
   readable('还差 20 爪爪币');
   readable('获取爪爪币');
-  ui.coinWaysForId = 'rabbit';
+  ui.coinWaysTarget = 'rabbit';
   drawPage('collection');
   readable('领养糯米还差 20 爪爪币');
   readable('领取今日礼物 · +30');
@@ -357,7 +395,7 @@ test('essential captions remain readable on a narrow short screen', async () => 
   const modalUi = structuredClone(ui);
   drawPage('collection');
   assert.deepEqual(ui, modalUi, 'drawing the coin routes leaves UI state with Main');
-  ui.coinWaysForId = null;
+  ui.coinWaysTarget = null;
 
   state.coins = 80;
   drawPage('collection');
@@ -497,7 +535,19 @@ test('large home scene, action dock and colored arcs fit on short and tall scree
       `${height}px: status labels are close to the arcs`);
     assert.ok(layout.labelY + 7 < scene.layout().navY,
       `${height}px: labels clear the navigation`);
-    assert.ok(labels.some(label => String(label.value).includes('今日 0/100')));
+    assert.ok(labels.some(label => String(label.value).includes('今日成长 0/100')));
+    const advice = scene.buttons.find(button => button.id === 'home_advice');
+    const close = scene.buttons.find(button => button.id === 'home_advice_close');
+    const growthHelp = scene.buttons.find(button => button.id === 'home_growth_help');
+    assert.ok(advice && close && growthHelp);
+    assert.equal(scene.hit(close.x + close.w / 2, close.y + close.h / 2),
+      'home_advice_close', `${height}px: close control has its own tap target`);
+    assert.equal(scene.hit(advice.x + advice.w / 2, advice.y + advice.h / 2),
+      'home_advice', `${height}px: advice body remains tappable`);
+    assert.ok(growthHelp.y + growthHelp.h < advice.y,
+      `${height}px: growth summary clears the advice row`);
+    assert.ok(advice.y + advice.h < layout.dockY,
+      `${height}px: advice row clears the action dock`);
   }
 });
 
@@ -649,11 +699,11 @@ test('home renders matching care sprite and speech before and after expiry', asy
   scene.home(state, ui);
   assert.deepEqual(pose, { expression: 'sleepy', action: 'rest' });
   assert.ok(text.includes('休息中，补充精力～'));
-  assert.ok(text.some(value => String(value).includes('今日 0/100')));
+  assert.ok(text.some(value => String(value).includes('今日成长 0/100')));
   state.pets.cat.dailyGrowth.earned = 100;
   text.length = 0;
   scene.home(state, ui);
-  assert.ok(text.some(value => String(value).includes('今日 100/100')));
+  assert.ok(text.some(value => String(value).includes('今日成长 100/100')));
   ui.expressionUntil = Date.now() - 1;
   text.length = 0;
   scene.home(state, ui);

@@ -1,13 +1,10 @@
 import { SPECIES, TASKS, petCardState, taskSnapshot, dailyAvailability,
-  careBlockReason, getDailyGrowth, DAILY_GIFT_COINS, GAME_MAX_COINS,
+  careBlock, careBlockReason, getDailyGrowth, DAILY_GIFT_COINS, GAME_MAX_COINS,
   MAX_DAILY_GROWTH, MAX_COINS } from './model.js';
 import { CARE_ACTIONS } from './care-actions.js';
 
 // A02's route suggestions are presentation data; reward and eligibility rules stay in model.
-export function coinWays(state, id, now = Date.now()) {
-  const card = petCardState(state, id);
-  if (card?.kind !== 'short') return null;
-  const species = SPECIES.find(item => item.id === id);
+function availableWays(state, now) {
   const space = MAX_COINS - state.coins;
   const ways = [];
   const gift = dailyAvailability(state, now);
@@ -48,5 +45,20 @@ export function coinWays(state, id, now = Date.now()) {
     ways.push({ id: 'level', page: 'home', title: '回小屋陪伴',
       hint: '升级可得奖励，并非立即到账' });
   }
-  return { title: `领养${species.name}还差 ${card.missing} 爪爪币`, ways };
+  return ways;
+}
+
+export function coinWays(state, id, now = Date.now()) {
+  const card = petCardState(state, id);
+  if (card?.kind !== 'short') return null;
+  const species = SPECIES.find(item => item.id === id);
+  return { title: `领养${species.name}还差 ${card.missing} 爪爪币`,
+    ways: availableWays(state, now) };
+}
+
+export function careCoinWays(state, action, now = Date.now()) {
+  const block = careBlock(state, action);
+  if (action !== 'feed' || block?.kind !== 'insufficient_coins') return null;
+  return { title: `喂食还差 ${block.missing} 爪爪币`,
+    ways: availableWays(state, now) };
 }
