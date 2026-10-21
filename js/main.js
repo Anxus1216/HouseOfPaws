@@ -11,21 +11,16 @@ import { coinWaysLayout } from './coin-ways-layout.js';
 import { careFullReason } from './care-reasons.js';
 import { homeAdvice, homeAdviceDetail } from './home-advice.js';
 import { careGrowthFeedback } from './growth-info.js';
+import { completedGameOutcome } from './game-result.js';
 import { logInfo, logWarn, logError } from './logger.js';
 import { SPECIES, STORAGE_KEY, hydrate, adopt, care, daily, miniReward,
-  ensureTasks, recordTask, claimTask, settleTime, getDailyGrowth,
-  MAX_DAILY_GROWTH, SAVE_VERSION, TASKS, petCardState, selectPet,
+  ensureTasks, recordTask, claimTask, settleTime,
+  SAVE_VERSION, TASKS, petCardState, selectPet,
   DAILY_GIFT_COINS, MAX_COINS } from './model.js';
 
 const STAT_LABELS = { hunger: '饱腹', clean: '清洁', happy: '快乐', energy: '精力' };
 // Idle pet scenes need fewer redraws; 50 ms gives them a 20 FPS cap.
 const PET_ANIMATION_INTERVAL_MS = 50;
-
-function growthFeedback(pet, earned, base, now) {
-  const reason = earned < base && pet.level >= 99 ? '（已满级）' :
-    earned < base && getDailyGrowth(pet, now) >= MAX_DAILY_GROWTH ? '（今日已满）' : '';
-  return `成长 +${earned}${reason}`;
-}
 
 export default class Main {
   constructor(options = {}) {
@@ -37,7 +32,8 @@ export default class Main {
     this.state = this.load();
     this.ui = { page: 'home', speech: '', toast: '', toastUntil: 0,
       playing: false, paused: false, score: 0, remaining: 20, stars: [], basketX: 195,
-      gameResult: '', gameGrowth: '', guideStep: this.state.guideStep, showSettings: false,
+      gameOutcome: null, quitConfirm: false,
+      guideStep: this.state.guideStep, showSettings: false,
       adoptionConfirmId: null,
       coinWaysTarget: null, coinWaysScroll: 0,
       showGrowthHelp: false, showHomeAdvice: true, adviceExplanation: null,
@@ -288,6 +284,23 @@ export default class Main {
       this.save();
       return;
     }
+    if (this.ui.quitConfirm) {
+      if (id === 'quit_confirm_close') this.ui.quitConfirm = false;
+      else if (id === 'quit_confirm_continue' && this.ui.playing) {
+        this.ui.quitConfirm = false;
+        this.ui.paused = false;
+        this.lastFrame = Date.now();
+        logInfo('game.resumed', { remaining: this.ui.remaining });
+      } else if (id === 'quit_confirm_end' && this.ui.playing && this.ui.paused) {
+        this.ui.quitConfirm = false;
+        this.ui.playing = false;
+        this.ui.paused = false;
+        this.ui.gameOutcome = { kind: 'aborted' };
+        this.ui.toast = '';
+        logInfo('game.quit', { score: this.ui.score, remaining: this.ui.remaining });
+      }
+      return;
+    }
     if (id === 'settings') {
       if (this.ui.playing) this.ui.paused = true;
       this.ui.showSettings = true;
@@ -298,14 +311,13 @@ export default class Main {
       logInfo('game.paused', { reason: 'button', remaining: this.ui.remaining });
       return;
     }
-    if (id === 'resume_game' && this.ui.playing) {
+    if (id === 'resume_game' && this.ui.playing && this.ui.paused) {
       this.ui.paused = false; this.lastFrame = Date.now();
       logInfo('game.resumed', { remaining: this.ui.remaining });
       return;
     }
-    if (id === 'quit_game' && this.ui.playing) {
-      this.ui.playing = false; this.ui.paused = false; this.ui.gameResult = '本局已结束，随时再来接星星';
-      logInfo('game.quit', { score: this.ui.score, remaining: this.ui.remaining });
+    if (id === 'quit_game' && this.ui.playing && this.ui.paused) {
+      this.ui.quitConfirm = true;
       return;
     }
     if (this.ui.playing && this.ui.page === 'game' && !this.ui.paused && !id) {
@@ -345,6 +357,12 @@ export default class Main {
       return;
     }
     if (id === 'game_help') { this.notice('左右滑动篮子接星星，20 秒后结算奖励'); return; }
+    if (id === 'game_return_home' && !this.ui.playing && this.ui.gameOutcome) {
+      this.ui.page = 'home'; return;
+    }
+    if (id === 'game_task_reward' && !this.ui.playing && this.ui.gameOutcome) {
+      this.ui.page = 'tasks'; return;
+    }
     if (id.startsWith('task_go_')) {
       const task = id.slice(8);
       this.ui.page = task === 'game' ? 'game' : 'home';
@@ -400,7 +418,9 @@ export default class Main {
       if (result && result.reward) { this.playSound('care'); this.save(); }
       return;
     }
-    if (id === 'start_game') { this.startGame(); return; }
+    if (id === 'start_game' && this.ui.page === 'game' && !this.ui.playing) {
+      this.startGame(); return;
+    }
     if (id === 'pet_tap') {
       this.ui.adviceExplanation = null;
       this.ui.speech = ['好喜欢你呀 ♡', '再摸摸我的头~', '今天也要开心哦！'][Math.floor(Math.random() * 3)];
@@ -621,8 +641,8 @@ export default class Main {
     this.ui.spawnTimer = 0;
     this.ui.stars = [];
     this.ui.basketX = 195;
-    this.ui.gameResult = '';
-    this.ui.gameGrowth = '';
+    this.ui.gameOutcome = null;
+    this.ui.quitConfirm = false;
     logInfo('game.started', { pet: this.state.active });
   }
 
@@ -662,12 +682,12 @@ export default class Main {
       const reward = miniReward(this.state, ui.score, now);
       logInfo('game.completed', { pet: this.state.active, score: ui.score,
         coins: reward.coins, xp: reward.xp, leveled: reward.leveled });
-      recordTask(this.state, 'game');
+      const taskCompleted = recordTask(this.state, 'game', now);
       if (reward.leveled) this.playSound('level');
-      ui.gameResult = `接到 ${ui.score} 颗星星 · 获得 ${reward.coins} 爪爪币`;
       const pet = this.state.pets[this.state.active];
-      ui.gameGrowth = growthFeedback(pet, reward.xp, Math.min(25, ui.score * 3), now);
-      this.notice(reward.leveled ? `萌宠升级啦！额外获得 ${reward.bonus} 爪爪币` : '萌宠玩得好开心！');
+      ui.gameOutcome = completedGameOutcome(ui.score, reward, pet, taskCompleted, now);
+      ui.toast = '';
+      ui.toastUntil = 0;
       this.save();
     }
   }

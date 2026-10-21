@@ -6,6 +6,7 @@ import { CARE_ACTIONS } from './care-actions.js';
 import { careShortReason } from './care-reasons.js';
 import { homeAdvice, homeAdviceText } from './home-advice.js';
 import { growthSummary, GROWTH_HELP_LINES } from './growth-info.js';
+import { gameOutcomeView } from './game-result.js';
 import { PET_FIELDS } from './debug-editor.js';
 import { readViewport } from './viewport.js';
 import { logInfo, logWarn, logError } from './logger.js';
@@ -833,19 +834,33 @@ export default class Scene {
       this.box(ui.basketX - 43, fieldY + fieldH - 50, 86, 28, 12, '#D8937E');
       this.box(ui.basketX - 48, fieldY + fieldH - 53, 96, 10, 5, '#A46B56');
     } else {
-      this.text('✦', 195, fieldY + fieldH * .43, 64, '#FFE1A0', 'center', 'bold');
-      if (ui.gameResult) {
-        this.text('本局完成！', 195, field.bottom - 158, 20, '#FFF9E7', 'center', 'bold');
-        this.readableText(ui.gameResult, 195, field.bottom - 130, 11, '#FFF1D3', 'center');
-        if (ui.gameGrowth) this.readableText(ui.gameGrowth, 195, field.bottom - 108,
-          11, '#FFD777', 'center', 'bold');
+      const gameTask = TASKS.find(task => task.id === 'game');
+      const hideTaskHint = state.tasks?.date !== ui.gameOutcome?.taskDate ||
+        state.tasks?.claimed?.game || state.tasks?.progress?.game < gameTask.target;
+      const result = gameOutcomeView(ui.gameOutcome, hideTaskHint);
+      if (result) {
+        this.box(40, fieldY + 16, 310, fieldH - 32, 18, 'rgba(17,57,79,.84)');
+        this.text(result.title, 195, fieldY + 51, 20, '#FFF9E7', 'center', 'bold');
+        result.lines.forEach((line, index) => this.readableText(line, 195,
+          fieldY + 78 + index * 22, 11, index === 0 ? '#FFD777' : '#FFF1D3', 'center'));
+        if (result.taskHint) {
+          this.readableText(result.taskHint, 195, field.bottom - 132,
+            10, '#FFD777', 'center', 'bold');
+          this.buttons.push({ id: 'game_task_reward', x: 51,
+            y: field.bottom - 150, w: 288, h: 32 });
+        }
+        this.button('start_game', 56, field.bottom - 111, 278, 43,
+          '再玩一局', C.coral, '#FFF');
+        this.button('game_return_home', 56, field.bottom - 59, 278, 40,
+          '返回小屋', '#F6EDE6', C.brown);
       } else {
+        this.text('✦', 195, fieldY + fieldH * .43, 64, '#FFE1A0', 'center', 'bold');
         this.text('接住每一颗小星星', 195, field.bottom - 137, 18, '#FFF9E7', 'center', 'bold');
         this.readableText('左右滑动篮子，收集闪亮的好心情',
           195, field.bottom - 109, 11, '#FFF1D3', 'center');
+        this.button('start_game', 93, fieldY + fieldH - 67, 204, 46,
+          '开始接星星  →', C.coral, '#FFF');
       }
-      this.button('start_game', 93, fieldY + fieldH - 67, 204, 46,
-        ui.gameResult ? '再玩一局  →' : '开始接星星  →', C.coral, '#FFF');
     }
     this.readableText('每局 20 秒 · 星星越多奖励越多', 21, field.bottom + 24, 10, C.muted);
     this.readableText('玩法说明  ›', 368, field.bottom + 24, 10, C.coral, 'right');
@@ -853,12 +868,27 @@ export default class Scene {
     this.nav('game');
     if (ui.playing && ui.paused) {
       this.dim(); this.buttons = [];
-      const y = this.h / 2 - 128;
-      this.box(39, y, 312, 258, 24, C.paper);
-      this.text('暂停一下', 195, y + 50, 23, C.ink, 'center', 'bold');
-      this.text('星星会等你回来', 195, y + 84, 13, C.muted, 'center');
-      this.button('resume_game', 74, y + 120, 242, 48, '继续游戏', C.coral, '#FFF');
-      this.button('quit_game', 74, y + 184, 242, 42, '结束本局', '#F6EDE6', C.brown);
+      if (ui.quitConfirm) {
+        const y = this.h / 2 - 128;
+        this.box(39, y, 312, 258, 24, C.paper);
+        this.button('quit_confirm_close', 300, y + 19, 34, 34,
+          '×', '#F8EEE8', C.brown, null, 18);
+        this.text('现在结束本局？', 195, y + 54, 21, C.ink, 'center', 'bold');
+        this.readableText('结束后本局不结算奖励，', 195,
+          y + 89, 12, C.brown, 'center');
+        this.readableText('也不计入今日任务。', 195, y + 113, 12, C.brown, 'center');
+        this.button('quit_confirm_continue', 74, y + 135, 242, 43,
+          '继续游戏', C.coral, '#FFF');
+        this.button('quit_confirm_end', 74, y + 190, 242, 40,
+          '确认结束', '#F6EDE6', C.brown);
+      } else {
+        const y = this.h / 2 - 128;
+        this.box(39, y, 312, 258, 24, C.paper);
+        this.text('暂停一下', 195, y + 50, 23, C.ink, 'center', 'bold');
+        this.text('星星会等你回来', 195, y + 84, 13, C.muted, 'center');
+        this.button('resume_game', 74, y + 120, 242, 48, '继续游戏', C.coral, '#FFF');
+        this.button('quit_game', 74, y + 184, 242, 42, '结束本局', '#F6EDE6', C.brown);
+      }
     }
   }
 
