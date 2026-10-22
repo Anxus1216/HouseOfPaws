@@ -53,7 +53,7 @@ test('storage failures log the operation and preserve the local fallback', async
     game.save();
     assert.equal(game.ui.toast, '本机存档暂时不可用');
     assert.deepEqual(errors.map(([event]) => event), [
-      '[爪爪小屋] save.load_failed', '[爪爪小屋] save.write_failed',
+      '[爪爪小屋] save.load_failed',
     ]);
   } finally {
     console.error = originalError;

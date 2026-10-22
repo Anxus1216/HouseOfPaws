@@ -7,7 +7,7 @@ export const SPECIES = [
 ];
 
 export const STORAGE_KEY = 'paw_house_save_v1';
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 export const MAX_DAILY_GROWTH = 100;
 export const DAILY_GIFT_COINS = 30;
 export const GAME_MAX_COINS = 30;
@@ -21,6 +21,19 @@ export const TASKS = [
   { id: 'game', label: '完成接星星 1 局', target: 1, reward: 20 },
 ];
 const STATS = ['hunger', 'clean', 'happy', 'energy'];
+const GUIDE_PHASES = new Set(['await_adoption', 'interact', 'care', 'claim', 'outro', 'done', 'skipped', 'disabled']);
+const GUIDE_BRANCHES = new Set([null, 'care', 'game', 'pending_reward']);
+const GUIDE_FACTS = ['interacted', 'cared', 'naturalGame', 'claimedTask'];
+const freshGuide = phase => ({ version: 1, phase,
+  facts: { interacted: false, cared: false, naturalGame: false, claimedTask: false }, branch: null });
+function hydrateGuide(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.version !== 1 ||
+      !GUIDE_PHASES.has(raw.phase) || !GUIDE_BRANCHES.has(raw.branch) ||
+      !raw.facts || typeof raw.facts !== 'object' || Array.isArray(raw.facts) ||
+      !GUIDE_FACTS.every(key => typeof raw.facts[key] === 'boolean')) return freshGuide('disabled');
+  return { version: 1, phase: raw.phase,
+    facts: Object.fromEntries(GUIDE_FACTS.map(key => [key, raw.facts[key]])), branch: raw.branch };
+}
 export const MAX_COINS = 999999;
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const dateOrder = key => {
@@ -56,13 +69,15 @@ export function makePet(id, now = Date.now()) {
 
 export function initialState(now = Date.now()) {
   return { version: SAVE_VERSION, pets: {}, active: null, coins: 60, lastSeen: now,
-    lastDaily: '', totalActions: 0, tasks: freshTasks(now), guideStep: 1,
+    lastDaily: '', totalActions: 0, tasks: freshTasks(now),
+    guide: freshGuide('await_adoption'),
     soundEnabled: true };
 }
 
 export function hydrate(raw, now = Date.now()) {
   const fallback = initialState(now);
-  if (!raw || typeof raw !== 'object') return fallback;
+  if (raw === null || raw === undefined) return fallback;
+  if (typeof raw !== 'object' || Array.isArray(raw)) return { ...fallback, guide: freshGuide('disabled') };
   const state = { ...fallback, coins: validInteger(raw.coins, fallback.coins, 0, MAX_COINS),
     lastSeen: validTime(raw.lastSeen, now),
     lastDaily: typeof raw.lastDaily === 'string' ? raw.lastDaily : '',
@@ -84,8 +99,12 @@ export function hydrate(raw, now = Date.now()) {
     state.pets[species.id] = pet;
   });
   state.active = state.pets[raw.active] ? raw.active : Object.keys(state.pets)[0] || null;
-  state.guideStep = validInteger(raw.guideStep,
-    Object.keys(state.pets).length ? 0 : 1, 0, 3);
+  state.guide = hydrateGuide(raw.guide);
+  if (state.guide.phase === 'await_adoption' && Object.keys(state.pets).length) {
+    state.guide = freshGuide('disabled');
+  } else if (['interact', 'care', 'claim', 'outro'].includes(state.guide.phase) && !state.active) {
+    state.guide = freshGuide('disabled');
+  }
   state.soundEnabled = typeof raw.soundEnabled === 'boolean' ? raw.soundEnabled : true;
   if (raw.tasks && typeof raw.tasks === 'object' &&
       dateOrder(raw.tasks.date) >= dateOrder(dayKey(now))) {

@@ -214,6 +214,7 @@ test('runtime window and safe-area changes redraw before accepting touch', async
     return point;
   };
   tap('adopt_selected');
+  game.ui.guideHoldUntil = Date.now() - 1;
   tap('guide_skip');
   game.ui.page = 'game';
   game.startGame();

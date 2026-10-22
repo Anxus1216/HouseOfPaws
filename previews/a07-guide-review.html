@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>A07 操作式新手引导｜设计原稿</title>
+  <style>
+    :root { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; color: #5a3f2e; background: #f5efe6; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    button { font: inherit; cursor: pointer; }
+    .workspace { max-width: 1180px; margin: auto; padding: 34px 26px 50px; }
+    .intro { max-width: 770px; }
+    .eyebrow { color: #b97956; font-size: 12px; font-weight: 800; letter-spacing: .17em; }
+    h1 { margin: 9px 0; font-size: 30px; letter-spacing: .02em; }
+    .intro p { color: #765f51; font-size: 14px; line-height: 1.8; margin: 0; }
+    .workspace-grid { display: grid; grid-template-columns: minmax(420px, 1fr) 370px; gap: 42px; margin-top: 28px; align-items: start; }
+    .controls { background: #fffaf2; border: 1px solid #ead8c5; border-radius: 20px; padding: 21px; box-shadow: 0 12px 38px #6d4d3020; }
+    .controls h2 { font-size: 17px; margin: 0 0 6px; }
+    .controls p { font-size: 12px; color: #8d7665; line-height: 1.6; margin: 0 0 17px; }
+    .stage-list { display: grid; gap: 8px; }
+    .stage-btn { border: 1px solid #e8d8c8; color: #6f5847; background: #fffdfa; border-radius: 12px; text-align: left; padding: 11px 13px; display: flex; justify-content: space-between; gap: 14px; align-items: center; }
+    .stage-btn strong { font-size: 13px; }
+    .stage-btn small { color: #a08d7e; font-size: 11px; }
+    .stage-btn.active { background: #f8e6d5; border-color: #b97956; color: #6b422e; }
+    .device-controls { display: flex; gap: 8px; margin-top: 20px; }
+    .device-controls button { flex: 1; border: 1px solid #dec7b1; background: #fffdfa; color: #76533e; border-radius: 10px; padding: 9px 2px; font-size: 12px; }
+    .device-controls button.active { background: #b97956; border-color: #b97956; color: white; }
+    .review-notes { margin-top: 20px; border-top: 1px solid #ecdcc9; padding-top: 15px; }
+    .review-notes h3 { font-size: 13px; margin: 0 0 8px; }
+    .review-notes ul { margin: 0; padding-left: 18px; color: #7a6556; font-size: 12px; line-height: 1.8; }
+    .preview-area { min-height: 740px; display: grid; place-items: start center; }
+    .device-label { color: #836b5a; font-size: 12px; margin-bottom: 11px; text-align: center; }
+    .phone-wrap { width: 320px; height: 692px; position: relative; }
+    .phone-wrap.short { height: 566px; }
+    .screen { width: 390px; height: 844px; transform: scale(.82); transform-origin: top left; overflow: hidden; position: relative; background: #fff3e2; border: 1px solid #d7b99b; box-shadow: 0 22px 50px #64452b36; }
+    .short .screen { height: 690px; }
+    .brand { position: absolute; top: 23px; left: 28px; font-weight: 800; font-size: 16px; }
+    .brand small { display: block; font-size: 7px; letter-spacing: .33em; color: #9a806b; margin-top: 3px; }
+    .wallet { position: absolute; right: 29px; top: 58px; border-radius: 18px; background: #f1dfc5; padding: 8px 14px; color: #76533e; font-size: 12px; font-weight: 700; }
+    .page-title { position: absolute; top: 83px; left: 20px; font-size: 20px; font-weight: 800; }
+    .page-title:before { content: ""; position: absolute; top: -11px; width: 22px; height: 2px; background: #b97956; }
+    .page-sub { position: absolute; top: 114px; left: 20px; font-size: 13px; color: #76533e; }
+    .home-scene { position: absolute; left: 20px; right: 20px; top: 155px; bottom: 184px; border: 2px solid #b97956; border-radius: 23px; background: #f2d8b8 url('../assets/scenes/scene_home_afternoon.jpg') center center / cover; overflow: hidden; }
+    .short .home-scene { top: 136px; bottom: 164px; }
+    .growth { position: absolute; top: 14px; left: 12px; right: 12px; height: 62px; border-radius: 13px; background: #fff9efef; padding: 11px 13px; font-size: 12px; font-weight: 800; }
+    .growth small { display: block; margin-top: 5px; color: #846e5a; font-size: 10px; font-weight: 400; }
+    .pet { position: absolute; width: 264px; height: auto; left: 43px; bottom: 82px; filter: drop-shadow(0 5px 5px #7b51253d); }
+    .short .pet { width: 202px; left: 72px; bottom: 77px; }
+    .pet-target { position: absolute; top: 87px; left: 48px; right: 48px; bottom: 84px; border-radius: 44%; background: transparent; border: 0; z-index: 2; }
+    .care-dock { position: absolute; bottom: 9px; left: 9px; right: 9px; height: 72px; border-radius: 16px; background: #fff9efed; display: grid; grid-template-columns: repeat(4, 1fr); padding: 8px 4px; gap: 2px; }
+    .care { border: 0; background: none; color: #76533e; font-size: 12px; font-weight: 700; border-radius: 11px; }
+    .care i { display: block; width: 24px; height: 24px; border-radius: 50%; margin: 0 auto 3px; background: #e9d7bd; border: 5px solid #f2e1ca; }
+    .care:nth-child(2) i { background: #a7d4ce; border-color: #e6f0ea; }
+    .care:nth-child(3) i { background: #dca89e; border-color: #fbe3db; }
+    .care:nth-child(4) i { background: #c1b3cb; border-color: #eee6ee; }
+    .care.muted { opacity: .42; }
+    .stats { position: absolute; bottom: 78px; left: 29px; right: 29px; display: flex; justify-content: space-between; color: #76533e; font-size: 11px; }
+    .stats span { display: grid; place-items: center; width: 59px; height: 59px; border: 6px solid #eec7aa; border-top-color: #ee865f; border-radius: 50%; background: #fff3e2; }
+    .stats span:nth-child(2) { border-top-color: #25b8c3; }.stats span:nth-child(3) { border-top-color: #e9b42d; }.stats span:nth-child(4) { border-top-color: #67c565; }
+    .nav { position: absolute; bottom: 0; left: 20px; right: 20px; height: 64px; border-top: 1px solid #dec3a4; display: flex; background: #fff3e2; }
+    .nav button { width: 25%; border: 0; background: transparent; color: #9a806b; font-size: 12px; font-weight: 600; }
+    .nav button.active { color: #b97956; font-weight: 800; }
+    .short .stats { bottom: 76px; }
+    .task-panel { position: absolute; top: 170px; left: 20px; right: 20px; bottom: 75px; }
+    .short .task-panel { top: 136px; }
+    .task-summary { height: 58px; border-radius: 18px; background: #eed7b4; padding: 18px; font-size: 13px; font-weight: 800; }
+    .task-row { position: relative; height: 122px; border-bottom: 1px solid #dec3a4; margin: 5px 13px 0; padding: 18px 3px 0 47px; }
+    .short .task-row { height: 104px; padding-top: 12px; }
+    .task-row .mark { position: absolute; left: 0; top: 19px; border-radius: 50%; width: 38px; height: 38px; background: #e9f0e8; }
+    .task-row .name { font-size: 14px; font-weight: 800; }.task-row .desc { font-size: 10px; margin-top: 12px; color: #9a806b; }.task-row .count { font-size: 11px; margin-top: 11px; color: #9a806b; }
+    .task-row .reward { position: absolute; right: 0; top: 18px; color: #b97956; font-weight: 800; font-size: 11px; }
+    .task-row button { position: absolute; right: 0; top: 65px; width: 80px; height: 30px; border: 1px solid #dec3a4; border-radius: 16px; background: #fff3e2; color: #b97956; font-size: 10px; font-weight: 800; }
+    .task-row button.claim { color: white; background: #b97956; border-color: #b97956; }
+    .short .task-row button { top: 60px; }
+    .gift { position: relative; background: #f3e2c8; border-radius: 15px; margin-top: 11px; height: 50px; padding: 17px 13px; font-size: 11px; }.gift button { position: absolute; right: 9px; top: 10px; border: 0; border-radius: 15px; background: #b97956; color: white; padding: 8px; font-size: 10px; }
+    .focus { position: absolute; z-index: 5; border: 3px solid #54a9bb; border-radius: 18px; pointer-events: none; box-shadow: 0 0 0 4px #f3fcfbd9, 0 0 0 8px #66bfd177, 0 0 16px #329dbb99; animation: guide-focus-pulse 1.8s ease-in-out infinite; }
+    @keyframes guide-focus-pulse {
+      0%, 100% { border-color: #54a9bb; box-shadow: 0 0 0 4px #f3fcfbd9, 0 0 0 8px #66bfd177, 0 0 16px #329dbb99; }
+      50% { border-color: #e5fbff; box-shadow: 0 0 0 5px #f3fcfbf2, 0 0 0 12px #64c9d6b3, 0 0 26px #258eafd9; }
+    }
+    @media (prefers-reduced-motion: reduce) { .focus { animation: none; } }
+    .focus.pet-focus { left: 67px; top: 264px; width: 258px; height: 250px; border-radius: 44%; }
+    .short .focus.pet-focus { top: 215px; left: 92px; width: 204px; height: 181px; }
+    .focus.care-focus { left: 31px; right: 31px; bottom: 192px; height: 74px; }.short .focus.care-focus { bottom: 172px; }
+    .focus.nav-focus { left: 282px; width: 81px; height: 51px; bottom: 6px; }.focus.task-nav-focus { left: 199px; width: 82px; height: 51px; bottom: 6px; }
+    .focus.claim-focus { left: 262px; top: 295px; width: 85px; height: 36px; border-radius: 20px; }.short .focus.claim-focus { top: 255px; }
+    .focus.pending-claim-focus { left: 262px; top: 418px; width: 85px; height: 36px; border-radius: 20px; }.short .focus.pending-claim-focus { top: 363px; }
+    .focus.game-claim-focus { left: 262px; top: 545px; width: 85px; height: 36px; border-radius: 20px; }.short .focus.game-claim-focus { top: 467px; }
+    .focus.game-play-focus { left: 63px; top: 597px; width: 264px; height: 54px; border-radius: 23px; }.short .focus.game-play-focus { top: 461px; }
+    .hint { position: absolute; z-index: 7; left: 32px; right: 32px; top: 172px; background: #e7f4f6; border: 0; box-shadow: 0 8px 24px #356f8033; border-radius: 16px; padding: 11px 14px 12px; min-height: 74px; color: #254a57; }
+    .short .hint { top: 145px; min-height: 69px; }
+    .hint-label { color: #2d6d7d; font-weight: 800; font-size: 10px; letter-spacing: .06em; margin-bottom: 4px; }
+    .hint-copy { font-weight: 800; font-size: 14px; line-height: 1.45; padding-right: 70px; }
+    .hint-skip { position: absolute; right: 11px; top: 14px; color: #315f6d; border: 1px solid #acd1d9; border-radius: 12px; background: #d6edf1; font-size: 11px; padding: 6px 8px; }
+    .hint.home-hint { top: 155px; min-height: 80px; }.short .hint.home-hint { top: 136px; }
+    .hint.claim-hint { top: 167px; }.short .hint.claim-hint { top: 137px; }
+    .hint.outro-hint { top: 308px; padding: 22px 16px; text-align: center; min-height: 0; }.short .hint.outro-hint { top: 225px; }
+    .game-field { position: absolute; top: 168px; left: 20px; right: 20px; bottom: 176px; border-radius: 22px; background: #174768 url('../assets/scenes/scene_star_sky.jpg') center / cover; border: 2px solid #b97956; }
+    .game-field button { position: absolute; bottom: 20px; left: 48px; right: 48px; border: 0; border-radius: 20px; padding: 12px; background: #b97956; color: white; font-weight: 800; }
+    .short .game-field { top: 136px; bottom: 158px; }
+    .outro-title { font-size: 17px; font-weight: 800; }.outro-copy { font-size: 13px; color: #3c6672; margin-top: 8px; }
+    .outro-actions { display: flex; gap: 8px; margin-top: 17px; }.outro-actions button { flex: 1; border-radius: 18px; padding: 9px; border: 1px solid #4e9eb0; font-size: 12px; background: #f2fbfc; color: #357d90; }.outro-actions button:first-child { background: #4e9eb0; color: white; }
+    .footer-note { margin-top: 25px; font-size: 12px; color: #8b7564; line-height: 1.7; }
+    @media(max-width: 830px) { .workspace { padding: 24px 16px; }.workspace-grid { grid-template-columns: 1fr; }.preview-area { order: -1; min-height: 0; }.controls { max-width: 500px; margin: auto; }.intro { max-width: 500px; margin: auto; } }
+  </style>
+</head>
+<body>
+  <main class="workspace">
+    <div class="intro">
+      <div class="eyebrow">PAWPAW HOUSE · A07 REVIEW DRAFT</div>
+      <h1>操作式新手引导</h1>
+      <p>沿用现有奶糖与小屋素材。切换右侧情境和屏幕尺寸，检查提示、聚焦范围、跳过入口与原有操作区的位置。点击原稿里的目标可顺着主路径前进；这份原稿不连接游戏存档。</p>
+    </div>
+    <div class="workspace-grid">
+      <section class="controls" aria-label="设计情境">
+        <h2>查看情境</h2>
+        <p>主路径展示“互动 → 照料 → 领奖”；下面两项展示照料全部不可用时的分支。</p>
+        <div id="stages" class="stage-list"></div>
+        <div class="device-controls" aria-label="屏幕尺寸">
+          <button type="button" data-device="tall">较高屏 · 390 × 844</button>
+          <button type="button" data-device="short">短屏 · 320 × 568</button>
+        </div>
+        <div class="review-notes"><h3>审核要点</h3><ul>
+          <li>浅蓝提示与跳过入口是否清楚，又不会压住奶糖或按钮？</li>
+          <li>目标框的呼吸高亮节奏是否合适？</li>
+          <li>照料不可用时，游戏与直接领奖两条去向是否容易理解？</li>
+          <li>短屏里底部任务、游戏导航和领奖按钮是否仍可点击？</li>
+        </ul></div>
+      </section>
+      <section class="preview-area" aria-label="游戏界面原稿">
+        <div><div id="deviceLabel" class="device-label"></div><div id="phoneWrap" class="phone-wrap"><div id="screen" class="screen"></div></div></div>
+      </section>
+    </div>
+    <p class="footer-note">设计原稿仅用于确认 A07 的交互与布局。小屋引导出现时，等级信息暂时隐藏，引导结束后恢复。底层任务与状态使用示例数据；具体聚焦框会在实现时读取实际按钮位置，并在弹窗出现时暂时隐藏。</p>
+  </main>
+  <script>
+    const stages = [
+      { id: 'interact', title: '1 · 打招呼', note: '点奶糖才推进' },
+      { id: 'care', title: '2 · 照料', note: '点可用动作才推进' },
+      { id: 'claimNav', title: '3 · 前往任务', note: '底部导航仍可点击' },
+      { id: 'claim', title: '3 · 领取奖励', note: '任务奖励入账才完成' },
+      { id: 'gameAlt', title: '照料不可用 · 去游戏', note: '自然完赛后再领奖' },
+      { id: 'claimAlt', title: '照料不可用 · 直接领奖', note: '已有完成未领奖励' },
+      { id: 'outro', title: '完成提示', note: '去游戏或留在小屋' },
+    ];
+    const state = { stage: 'interact', device: 'tall' };
+    const asset = name => `../assets/pets/selected/${name}`;
+    function homeMarkup() {
+      const muted = state.stage === 'gameAlt' || state.stage === 'claimAlt';
+      const guidingHome = ['interact', 'care', 'claimNav', 'gameAlt', 'claimAlt'].includes(state.stage);
+      return `<div class="home-scene">
+        ${guidingHome ? '' : '<div class="growth">奶糖 · LV. 1<small>距离下一次成长，还有一点点时间</small></div>'}
+        <img class="pet" src="${asset('pet_cat_normal.png')}" alt="奶糖">
+        <button class="pet-target" ${state.stage==='interact'?'data-next="care"':''} aria-label="轻点奶糖"></button>
+        <div class="care-dock">${['喂食','清洁','玩耍','休息'].map(label => `<button class="care ${muted?'muted':''}" ${state.stage==='care'?'data-next="claimNav"':''} aria-label="${label}"><i></i>${label}</button>`).join('')}</div>
+      </div><div class="stats"><span>饱腹</span><span>清洁</span><span>心情</span><span>精力</span></div>`;
+    }
+    function tasksMarkup() {
+      const cared = state.stage === 'claim';
+      const played = state.stage === 'claimGame';
+      const rows = [
+        { title:'照顾小伙伴', desc:'照料萌宠 1 次', count:cared?'1 / 1':'0 / 1', reward:'✦ 10', btn:cared?'领取奖励':'去完成 →', claim:cared },
+        { title:'亲密时光', desc:'和萌宠互动 1 次', count:'1 / 1', reward:'✦ 10', btn:'领取奖励', claim:true },
+        { title:'星星收集家', desc:'完成接星星 1 局', count:played?'1 / 1':'0 / 1', reward:'✦ 20', btn:played?'领取奖励':'去游戏 →', claim:played },
+      ];
+      return `<div class="task-panel"><div class="task-summary">今日目标 ${cared||played?2:1}/3</div>${rows.map(row => `<div class="task-row"><div class="mark"></div><div class="name">${row.title}</div><div class="desc">${row.desc}</div><div class="count">${row.count}</div><div class="reward">${row.reward}</div><button class="${row.claim?'claim':''}" data-next="${row.claim?'outro':'interact'}">${row.btn}</button></div>`).join('')}<div class="gift">✦　每日礼物 · +30 爪爪币 <button>领取礼物</button></div></div>`;
+    }
+    function hint() {
+      if (state.stage === 'skipped' || state.stage === 'done') return '';
+      const configs = {
+        interact: ['1 / 3 · 打招呼', '轻点奶糖，和它打个招呼', 'home-hint'],
+        care: ['2 / 3 · 照料', '选一种照料方式，看看奶糖的反应', 'home-hint'],
+        claimNav: ['3 / 3 · 领奖', '去任务页，领走刚完成的奖励', 'home-hint'],
+        claim: ['3 / 3 · 领奖', '点击已完成任务，领取奖励', 'claim-hint'],
+        claimPending: ['3 / 3 · 领奖', '领走刚完成的互动奖励', 'claim-hint'],
+        claimGame: ['3 / 3 · 领奖', '接星星任务奖励已经可以领取', 'claim-hint'],
+        gameAlt: ['2 / 3 · 照料暂不可用', '先完成一局接星星吧', 'home-hint'],
+        gameScreen: ['2 / 3 · 游戏替代路径', '自然完成一局后，再去领奖', 'claim-hint'],
+        claimAlt: ['3 / 3 · 已有奖励可领', '先去任务页看看吧', 'home-hint'],
+      };
+      if (state.stage === 'outro') return `<div class="hint outro-hint"><div class="outro-title">小小约定完成啦！</div><div class="outro-copy">想继续攒爪爪币？试试 20 秒接星星</div><div class="outro-actions"><button data-next="gameScreen">去游戏</button><button data-next="done">知道了</button></div></div>`;
+      const [label, copy, cls] = configs[state.stage];
+      return `<div class="hint ${cls}"><div class="hint-label">${label}</div><div class="hint-copy">${copy}</div><button class="hint-skip" data-next="skipped">跳过引导</button></div>`;
+    }
+    function render() {
+      const taskPage = ['claim', 'claimPending', 'claimGame'].includes(state.stage);
+      const gamePage = state.stage === 'gameScreen';
+      document.getElementById('stages').innerHTML = stages.map(s => `<button type="button" class="stage-btn ${state.stage===s.id?'active':''}" data-stage="${s.id}"><strong>${s.title}</strong><small>${s.note}</small></button>`).join('');
+      document.querySelectorAll('[data-device]').forEach(btn => btn.classList.toggle('active', btn.dataset.device === state.device));
+      const wrap = document.getElementById('phoneWrap');
+      wrap.classList.toggle('short', state.device === 'short');
+      document.getElementById('deviceLabel').textContent = state.device === 'short' ? '短屏布局 · 320 × 568' : '较高屏布局 · 390 × 844';
+      const focusClass = { interact:'pet-focus', care:'care-focus', claimNav:'task-nav-focus', claim:'claim-focus', claimPending:'pending-claim-focus', claimGame:'game-claim-focus', gameAlt:'nav-focus', gameScreen:'game-play-focus', claimAlt:'task-nav-focus' }[state.stage];
+      const taskDestination = state.stage === 'claimAlt' ? 'claimPending' : state.stage === 'gameScreen' ? 'claimGame' : 'claim';
+      document.getElementById('screen').innerHTML = `
+        <div class="brand">爪爪小屋<small>PAWPAW HOUSE</small></div><div class="wallet">✦　60</div>
+        <div class="page-title">${taskPage?'每日清单':gamePage?'星星接接乐':'陪伴日记'}</div><div class="page-sub">${taskPage?'今天的小小约定':gamePage?'把星光装进小篮子':'今天也一起慢慢长大'}</div>
+        ${taskPage?tasksMarkup():gamePage?'<div class="game-field"><button data-next="claimGame">模拟自然完赛 → 继续领奖</button></div>':homeMarkup()}
+        <nav class="nav"><button class="${taskPage||gamePage?'':'active'}" data-next="interact">小屋</button><button>萌宠</button><button class="${taskPage?'active':''}" data-next="${taskDestination}">任务</button><button class="${gamePage?'active':''}" data-next="gameScreen">游戏</button></nav>
+        ${focusClass?`<div class="focus ${focusClass}"></div>`:''}${hint()}`;
+    }
+    document.addEventListener('click', event => {
+      const stage = event.target.closest('[data-stage]');
+      const device = event.target.closest('[data-device]');
+      const next = event.target.closest('[data-next]');
+      if (stage) state.stage = stage.dataset.stage;
+      if (device) state.device = device.dataset.device;
+      if (next) state.stage = next.dataset.next;
+      if (stage || device || next) render();
+    });
+    render();
+  </script>
+</body>
+</html>

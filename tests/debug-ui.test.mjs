@@ -52,6 +52,7 @@ test('settings entry, numeric keypad, save and disabled mode work through touch 
   assert.equal(game.ui.debugEditor, null);
 
   tapId('adopt_selected');
+  game.ui.guideHoldUntil = Date.now() - 1;
   tapId('guide_skip');
   tapId('settings');
   tapId('debug_open');

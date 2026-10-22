@@ -8,6 +8,7 @@ import { careShortReason } from './care-reasons.js';
 import { homeAdvice, homeAdviceText } from './home-advice.js';
 import { growthSummary, GROWTH_HELP_LINES } from './growth-info.js';
 import { gameOutcomeView } from './game-result.js';
+import { guideView } from './guide.js';
 import { PET_FIELDS } from './debug-editor.js';
 import { readViewport } from './viewport.js';
 import { logInfo, logWarn, logError } from './logger.js';
@@ -75,6 +76,9 @@ const ANIMATION_CLIP_WIDTH = 360;
 const ANIMATION_CLIP_TOP_MARGIN = 10;
 // Scene animation time is measured in seconds; Date.now() is in milliseconds.
 const MILLISECONDS_PER_SECOND = 1000;
+const GUIDE_CARD = Object.freeze({ x: 32, width: 326, height: 82, radius: 16 });
+const GUIDE_COLOR = Object.freeze({ fill: '#E7F4F6', label: '#2D6D7D',
+  text: '#254A57', button: '#D6EDF1', focus: '#54A9BB' });
 
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 
@@ -566,16 +570,19 @@ export default class Scene {
     this.buttons.push({ id: 'pet_tap', x: 82, y: layout.sceneY + 4,
       w: 225, h: layout.dockY - layout.sceneY - 4 });
     const infoX = HOME_INFO.x, infoY = layout.sceneY + HOME_INFO.top;
-    this.box(infoX, infoY, HOME_INFO.width, HOME_INFO.growthHeight,
-      12, 'rgba(255,249,239,.94)');
-    this.text(`${pet.name} · LV. ${pet.level}`, infoX + 11, infoY + 14,
-      13, C.brown, 'left', 'bold');
-    const growth = growthSummary(pet);
-    this.readableText(growth.progress, infoX + 11, infoY + 33, 11, C.brown);
-    this.readableText(`${growth.today}  ›`, infoX + 11, infoY + 51, 10, C.muted);
-    this.buttons.push({ id: 'home_growth_help', x: infoX, y: infoY + 23,
-      w: HOME_INFO.width, h: HOME_INFO.growthHeight - 23 });
-    if (ui.showHomeAdvice !== false) {
+    const homeGuide = this.visibleGuide(state, ui);
+    if (!homeGuide || homeGuide.phase === 'outro') {
+      this.box(infoX, infoY, HOME_INFO.width, HOME_INFO.growthHeight,
+        12, 'rgba(255,249,239,.94)');
+      this.text(`${pet.name} · LV. ${pet.level}`, infoX + 11, infoY + 14,
+        13, C.brown, 'left', 'bold');
+      const growth = growthSummary(pet);
+      this.readableText(growth.progress, infoX + 11, infoY + 33, 11, C.brown);
+      this.readableText(`${growth.today}  ›`, infoX + 11, infoY + 51, 10, C.muted);
+      this.buttons.push({ id: 'home_growth_help', x: infoX, y: infoY + 23,
+        w: HOME_INFO.width, h: HOME_INFO.growthHeight - 23 });
+    }
+    if (ui.showHomeAdvice !== false && (!homeGuide || homeGuide.phase === 'outro')) {
       const advice = homeAdvice(state);
       const adviceY = layout.sceneY + HOME_INFO.adviceTop;
       const closeWidth = 38;
@@ -921,24 +928,78 @@ export default class Scene {
     this.ctx.fillRect(0, 0, 390, this.h);
   }
 
-  guide(step) {
-    const pages = [
-      ['先认识小伙伴', '四项状态告诉你它现在的心情。', '饱腹、清洁、快乐、精力都值得照顾。'],
-      ['一起度过陪伴时光', '喂食、清洁、玩耍、休息都能帮助它成长。', '摸摸小伙伴，也能完成每日互动任务。'],
-      ['去接住星星吧', '游戏里移动篮子接星星，收集爪爪币。', '每日任务完成后，记得领取奖励。'],
-    ];
-    const page = pages[clamp(step - 1, 0, 2)];
-    this.dim(); this.buttons = [];
-    const y = this.h / 2 - 158;
-    this.box(29, y, 332, 317, 24, C.paper);
-    this.text(`${step} / 3`, 195, y + 31, 12, C.coral, 'center', 'bold');
-    this.circle(195, y + 91, 36, step === 3 ? '#FFF0D4' : step === 2 ? '#FBE3DB' : '#E9F0E8');
-    this.text(step === 3 ? '✦' : step === 2 ? '♥' : '♡', 195, y + 93, 35, C.coral, 'center');
-    this.text(page[0], 195, y + 150, 21, C.ink, 'center', 'bold');
-    this.readableText(page[1], 195, y + 188, 12, C.brown, 'center');
-    this.readableText(page[2], 195, y + 211, 11, C.muted, 'center');
-    this.button('guide_next', 62, y + 244, 266, 45, step === 3 ? '开始陪伴' : '下一步', C.coral, '#FFF');
-    this.button('guide_skip', 293, y + 11, 50, 29, '跳过', C.paper, C.muted, null, 11);
+  visibleGuide(state, ui, now = Date.now()) {
+    if (!state.active || ui.guideHoldUntil > now || ui.showSettings ||
+        ui.adoptionConfirmId || ui.coinWaysTarget || ui.showGrowthHelp ||
+        ui.rewardHelp || ui.debugEditor || ui.playing ||
+        (ui.page === 'game' && ui.gameOutcome) ||
+        ui.quitConfirm) return null;
+    return guideView(state, ui.page, now);
+  }
+
+  guideFocus(targetIds, page, now) {
+    const targets = this.buttons.filter(button => targetIds.includes(button.id));
+    if (!targets.length) return;
+    let x = Math.min(...targets.map(button => button.x));
+    let y = Math.min(...targets.map(button => button.y));
+    let right = Math.max(...targets.map(button => button.x + button.w));
+    const bottom = Math.min(this.h - 5,
+      Math.max(...targets.map(button => button.y + button.h)));
+    if (page === 'home' && targetIds.includes('pet_tap')) {
+      y = Math.max(y, this.homeLayout().sceneY + GUIDE_CARD.height + 5);
+    }
+    x -= 3; y -= 3; right += 3;
+    const width = right - x, height = bottom - y + 3;
+    if (width <= 0 || height <= 0) return;
+    const pulse = (1 - Math.cos(now / 1800 * Math.PI * 2)) / 2;
+    const c = this.ctx;
+    c.save();
+    c.shadowColor = `rgba(42, 158, 183, ${.25 + pulse * .42})`;
+    c.shadowBlur = 11 + pulse * 15;
+    this.roundedPath(x, y, width, height, targetIds.includes('pet_tap') ? 30 : 17);
+    c.strokeStyle = pulse > .5 ? '#E5FBFF' : GUIDE_COLOR.focus;
+    c.lineWidth = 2.5 + pulse;
+    c.stroke();
+    c.shadowBlur = 0;
+    c.strokeStyle = `rgba(102, 191, 209, ${.28 + pulse * .42})`;
+    c.lineWidth = 7 + pulse * 5;
+    c.stroke();
+    c.restore();
+  }
+
+  guide(state, ui, now = Date.now()) {
+    const view = this.visibleGuide(state, ui, now);
+    if (!view) return;
+    if (view.phase === 'outro') {
+      const y = this.h / 2 - 67;
+      this.box(GUIDE_CARD.x, y, GUIDE_CARD.width, 134, GUIDE_CARD.radius, GUIDE_COLOR.fill);
+      this.text(view.title, 195, y + 29, 17, GUIDE_COLOR.text, 'center', 'bold');
+      this.readableText(view.text, 195, y + 59,
+        12, GUIDE_COLOR.label, 'center');
+      this.button('guide_game', 48, y + 82, 140, 37, '去游戏', '#4E9EB0', '#FFF');
+      this.button('guide_finish', 202, y + 82, 140, 37, '知道了', '#F2FBFC', GUIDE_COLOR.label);
+      return;
+    }
+    this.guideFocus(view.targetIds, ui.page, now);
+    const y = ui.page === 'home' ? this.homeLayout().sceneY : this.layout().sceneY;
+    const c = this.ctx;
+    c.save(); c.shadowColor = 'rgba(53,111,128,.2)'; c.shadowBlur = 18;
+    c.shadowOffsetY = 7;
+    this.box(GUIDE_CARD.x, y, GUIDE_CARD.width, GUIDE_CARD.height,
+      GUIDE_CARD.radius, GUIDE_COLOR.fill);
+    c.restore();
+    this.readableText(view.label, GUIDE_CARD.x + 15, y + 21,
+      11, GUIDE_COLOR.label, 'left', 'bold');
+    const split = view.text.length <= 15 ? view.text.length :
+      Math.ceil(view.text.length / 2);
+    const firstLine = view.text.slice(0, split);
+    const secondLine = view.text.slice(split);
+    this.readableText(firstLine, GUIDE_CARD.x + 15, y + (secondLine ? 46 : 53),
+      13, GUIDE_COLOR.text, 'left', 'bold');
+    if (secondLine) this.readableText(secondLine, GUIDE_CARD.x + 15, y + 67,
+      13, GUIDE_COLOR.text, 'left', 'bold');
+    this.button('guide_skip', GUIDE_CARD.x + GUIDE_CARD.width - 111, y + 14,
+      100, 30, '跳过引导', GUIDE_COLOR.button, GUIDE_COLOR.label, '#ACD1D9', 11);
   }
 
   settings(state, ui) {
@@ -1154,7 +1215,7 @@ export default class Scene {
     else if (ui.page === 'game') this.game(state, ui);
     else this.home(state, ui);
     this.toast(ui);
-    if (state.active && ui.guideStep > 0) this.guide(ui.guideStep);
+    this.guide(state, ui);
     if (ui.adoptionConfirmId) this.adoptionConfirm(state, ui.adoptionConfirmId);
     if (coinWaysOffer) this.coinWaysModal(coinWaysOffer, ui.coinWaysScroll);
     if (ui.showGrowthHelp) this.growthHelp();

@@ -262,7 +262,8 @@ test('v1 save migrates without losing pets, currency or daily gift status', () =
   assert.equal(getDailyGrowth(state.pets.cat, now), 0);
   assert.equal(state.totalActions, 9);
   assert.equal(daily(state, now), false);
-  assert.equal(state.guideStep, 0);
+  assert.equal(state.guide.phase, 'disabled');
+  assert.equal(Object.hasOwn(state, 'guideStep'), false);
   assert.equal(state.soundEnabled, true);
   assert.equal(state.tasks.date, dayKey(now));
   assert.deepEqual(Object.values(state.tasks.progress), [0, 0, 0]);
@@ -313,7 +314,8 @@ test('tasks reset on local date change and damaged progress is repaired', () => 
   assert.equal(damaged.tasks.claimed.interact, false);
   assert.equal(damaged.tasks.progress.interact, 0);
   assert.equal(damaged.tasks.progress.game, 1);
-  assert.equal(damaged.guideStep, 0);
+  assert.equal(damaged.guide.phase, 'disabled');
+  assert.equal(Object.hasOwn(damaged, 'guideStep'), false);
   assert.equal(damaged.soundEnabled, true);
   assert.equal(hydrate({ lastSeen: null, pets: { cat: {} } }, tomorrow).pets.cat.hunger, 76);
 });

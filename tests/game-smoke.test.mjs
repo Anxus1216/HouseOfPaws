@@ -42,8 +42,9 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   tapId('adopt_selected');
   assert.equal(saved.paw_house_save_v1.active, 'cat');
   assert.ok(played.includes('audio/adopt.wav'));
+  game.ui.guideHoldUntil = Date.now() - 1;
   tapId('guide_skip');
-  assert.equal(saved.paw_house_save_v1.guideStep, 0);
+  assert.equal(saved.paw_house_save_v1.guide.phase, 'skipped');
   tapId('home_growth_help');
   assert.equal(game.ui.showGrowthHelp, true);
   game.draw();

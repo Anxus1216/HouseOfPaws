@@ -13,6 +13,7 @@ import { homeAdvice, homeAdviceDetail } from './home-advice.js';
 import { careGrowthFeedback } from './growth-info.js';
 import { completedGameOutcome } from './game-result.js';
 import { rewardSpaceHelp } from './reward-presentation.js';
+import { guideInteractionResponse, reconcileGuide, recordGuideEvent } from './guide.js';
 import { logInfo, logWarn, logError } from './logger.js';
 import { SPECIES, STORAGE_KEY, hydrate, adopt, care, daily, miniReward,
   ensureTasks, recordTask, claimTask, taskClaimState, giftClaimState, dayKey, settleTime,
@@ -34,7 +35,7 @@ export default class Main {
     this.ui = { page: 'home', speech: '', toast: '', toastUntil: 0,
       playing: false, paused: false, score: 0, remaining: 20, stars: [], basketX: 195,
       gameOutcome: null, quitConfirm: false,
-      guideStep: this.state.guideStep, showSettings: false,
+      guideHoldUntil: 0, showSettings: false,
       adoptionConfirmId: null,
       coinWaysTarget: null, coinWaysScroll: 0,
       showGrowthHelp: false, rewardHelp: null,
@@ -48,6 +49,7 @@ export default class Main {
     this.coinWayTouch = null;
     this.sounds = {};
     this.needsDraw = true;
+    if (this.saveReadFailed) this.notice('本机存档暂时不可用');
     this.lastAnimationDraw = 0;
     this.lastViewportCheck = Date.now();
     this.scene.onAssetReady = () => { this.needsDraw = true; };
@@ -68,6 +70,7 @@ export default class Main {
       this.syncViewport();
       settleTime(this.state, Date.now());
       ensureTasks(this.state);
+      reconcileGuide(this.state, Date.now());
       if (this.ui.rewardHelp && this.ui.rewardHelp.date !== dayKey()) {
         this.ui.rewardHelp = null;
       }
@@ -127,20 +130,29 @@ export default class Main {
   load() {
     try {
       const raw = wx.getStorageSync(STORAGE_KEY);
-      const state = hydrate(raw, Date.now());
+      // WeChat returns an empty string when this key has never been saved.
+      const state = hydrate(raw === '' ? null : raw, Date.now());
       const source = raw == null || raw === '' ? 'new' :
         raw && typeof raw === 'object' && !Array.isArray(raw) ? 'stored' : 'invalid';
+      this.saveDisabled = source === 'invalid';
+      this.saveReadFailed = source === 'invalid';
       logInfo('save.loaded', { source, version: raw?.version ?? null,
         migrated: source === 'stored' && raw.version !== SAVE_VERSION,
         pets: Object.keys(state.pets).length });
       return state;
     } catch (error) {
       logError('save.load_failed', { message: String(error) });
-      return hydrate(null, Date.now());
+      this.saveDisabled = true;
+      this.saveReadFailed = true;
+      return hydrate({}, Date.now());
     }
   }
 
   save() {
+    if (this.saveDisabled) {
+      this.notice('本机存档暂时不可用');
+      return;
+    }
     settleTime(this.state, Date.now());
     try { wx.setStorageSync(STORAGE_KEY, this.state); }
     catch (error) {
@@ -157,6 +169,7 @@ export default class Main {
 
   completeAdoption(speciesId) {
     if (adopt(this.state, speciesId)) {
+      const guideAdvanced = recordGuideEvent(this.state, 'adopt');
       const species = SPECIES.find(item => item.id === speciesId);
       logInfo('pet.adopted', { species: speciesId, coins: this.state.coins });
       this.ui.page = 'home'; this.ui.speech = '终于见到你啦！';
@@ -164,6 +177,7 @@ export default class Main {
       this.ui.action = ''; this.ui.statDelta = '';
       this.notice(speciesId === 'cat' ? '欢迎新伙伴加入小屋 ♡' :
         `欢迎${species.name}来到小屋！`);
+      if (guideAdvanced) this.ui.guideHoldUntil = this.ui.toastUntil;
       this.playSound('adopt'); this.save();
       return;
     }
@@ -291,12 +305,13 @@ export default class Main {
       }
       return;
     }
-    if (this.state.active && this.ui.guideStep > 0) {
-      if (id === 'guide_skip') this.ui.guideStep = 0;
-      else if (id === 'guide_next') this.ui.guideStep = this.ui.guideStep >= 3 ? 0 : this.ui.guideStep + 1;
-      else return;
-      this.state.guideStep = this.ui.guideStep;
-      this.save();
+    if (id === 'guide_skip') {
+      if (recordGuideEvent(this.state, 'skip')) this.save();
+      return;
+    }
+    if (id === 'guide_finish' || id === 'guide_game') {
+      if (recordGuideEvent(this.state, 'finish')) this.save();
+      if (id === 'guide_game') this.ui.page = 'game';
       return;
     }
     if (this.ui.quitConfirm) {
@@ -435,7 +450,10 @@ export default class Main {
           status.kind === 'date_guard' ? '日期变化后再查看今日任务' :
             '先完成任务再来领取吧');
       }
-      if (result && result.reward) { this.playSound('care'); this.save(); }
+      if (result && result.reward) {
+        if (recordGuideEvent(this.state, 'task_claim')) this.ui.guideHoldUntil = this.ui.toastUntil;
+        this.playSound('care'); this.save();
+      }
       return;
     }
     if (id === 'start_game' && this.ui.page === 'game' && !this.ui.playing) {
@@ -443,10 +461,15 @@ export default class Main {
     }
     if (id === 'pet_tap') {
       this.ui.adviceExplanation = null;
-      this.ui.speech = ['好喜欢你呀 ♡', '再摸摸我的头~', '今天也要开心哦！'][Math.floor(Math.random() * 3)];
+      const guidedResponse = guideInteractionResponse(this.state);
       this.ui.expression = 'happy'; this.ui.expressionUntil = Date.now() + FEEDBACK_MS.tap;
       this.ui.action = ''; this.ui.statDelta = '';
-      recordTask(this.state, 'interact'); this.playSound('care'); this.save();
+      recordTask(this.state, 'interact');
+      const guideAdvanced = recordGuideEvent(this.state, 'pet_tap');
+      this.ui.speech = guidedResponse && guideAdvanced ? guidedResponse :
+        ['好喜欢你呀 ♡', '再摸摸我的头~', '今天也要开心哦！'][Math.floor(Math.random() * 3)];
+      if (guideAdvanced) this.ui.guideHoldUntil = this.ui.expressionUntil;
+      this.playSound('care'); this.save();
       return;
     }
     if (['feed', 'wash', 'play', 'rest'].includes(id)) {
@@ -480,7 +503,9 @@ export default class Main {
           if (result.leveled) lines.push(result.bonus ?
             `升级返币 +${result.bonus} 爪爪币` : '钱包已满，升级返币 0');
           this.ui.statDelta = lines.join('|');
-          recordTask(this.state, 'care'); this.playSound(result.leveled ? 'level' : 'care'); this.save();
+          recordTask(this.state, 'care');
+          if (recordGuideEvent(this.state, 'care_success')) this.ui.guideHoldUntil = this.ui.expressionUntil;
+          this.playSound(result.leveled ? 'level' : 'care'); this.save();
         }
       }
     }
@@ -703,6 +728,7 @@ export default class Main {
       logInfo('game.completed', { pet: this.state.active, score: ui.score,
         coins: reward.coins, xp: reward.xp, leveled: reward.leveled });
       const taskCompleted = recordTask(this.state, 'game', now);
+      recordGuideEvent(this.state, 'game_complete', now);
       if (reward.leveled) this.playSound('level');
       const pet = this.state.pets[this.state.active];
       ui.gameOutcome = completedGameOutcome(ui.score, reward, pet, taskCompleted, now);
@@ -714,8 +740,7 @@ export default class Main {
 
   isAnimated() {
     if (this.ui.showSettings || this.ui.adoptionConfirmId || this.ui.coinWaysTarget ||
-        this.ui.showGrowthHelp || this.ui.rewardHelp || this.ui.debugEditor ||
-        (this.state.active && this.ui.guideStep > 0)) return false;
+        this.ui.showGrowthHelp || this.ui.rewardHelp || this.ui.debugEditor) return false;
     if (!this.state.active) return true;
     return this.ui.page === 'home' || this.ui.page === 'collection' ||
       (this.ui.page === 'game' && this.ui.playing && !this.ui.paused);
@@ -736,6 +761,10 @@ export default class Main {
       this.ui.toast = '';
       this.needsDraw = true;
     }
+    if (this.ui.guideHoldUntil && now >= this.ui.guideHoldUntil) {
+      this.ui.guideHoldUntil = 0;
+      this.needsDraw = true;
+    }
     if (this.state.tasks && this.state.tasks.date !== undefined) {
       const previousTasks = this.state.tasks;
       ensureTasks(this.state, now);
@@ -744,18 +773,23 @@ export default class Main {
         this.needsDraw = true;
       }
     }
+    if (reconcileGuide(this.state, now)) {
+      this.needsDraw = true;
+      this.save();
+    }
     if (this.ui.rewardHelp && this.ui.rewardHelp.date !== dayKey(now)) {
       this.ui.rewardHelp = null;
       this.needsDraw = true;
     }
     const wasAnimated = this.isAnimated();
     this.updateGame(dt);
-    const animated = wasAnimated || this.isAnimated();
+    const guideAnimating = !!this.scene.visibleGuide(this.state, this.ui, now);
+    const animated = wasAnimated || this.isAnimated() || guideAnimating;
     const gameAnimating = this.ui.page === 'game' && this.ui.playing;
     if (this.visible && (this.needsDraw ||
         (animated && (gameAnimating ||
           now - this.lastAnimationDraw >= PET_ANIMATION_INTERVAL_MS)))) {
-      if (this.needsDraw) this.draw();
+      if (this.needsDraw || guideAnimating) this.draw();
       else this.scene.drawAnimation(this.state, this.ui);
       this.lastAnimationDraw = now;
       this.needsDraw = false;
