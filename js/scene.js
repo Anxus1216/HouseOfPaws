@@ -12,18 +12,32 @@ import { guideView } from './guide.js';
 import { PET_FIELDS } from './debug-editor.js';
 import { readViewport } from './viewport.js';
 import { logInfo, logWarn, logError } from './logger.js';
+import { LINEN_ASSET, UI_SPRITES } from './ui-assets.js';
 
 const C = {
-  ink: '#5A3F2E', muted: '#9A806B', paper: '#FFF3E2', cream: '#FFF3E2',
-  peach: '#F1DFC5', coral: '#B97956', pink: '#CE8EA1', mint: '#87A9A5',
-  brown: '#76533E', gold: '#DAB56D', line: '#DEC3A4', shadow: '#D5BBA7',
-  wash: '#F3E2C8', track: '#E6D2B6',
+  ink: '#51372B', muted: '#927565', paper: '#FFF9F0', cream: '#FFF8EE',
+  peach: '#FBEBD6', coral: '#C25343', pink: '#D9A2A7', mint: '#55B79B',
+  brown: '#684738', gold: '#DDA84F', line: '#E9D5BD', shadow: '#D5BBA7',
+  wash: '#FFF3E1', track: '#E9DED0',
 };
+const PRESS = Object.freeze({ primary: '#A34339', secondary: '#EADCCE',
+  icon: '#EBD7C4', row: '#E5D6C2', nav: '#DCEEE9', danger: '#8E3937',
+  guide: '#307C91' });
+const DANGER = '#B44F4B';
+const STATIC_FILL = '#E4DED5';
+const FABRIC = Object.freeze({ stitch: '#DDBD9D', edge: '#E9D1B6' });
+const BUTTON_FACE = Object.freeze({
+  primary: { pressed: PRESS.primary, border: '#A7473D', stitch: 'rgba(255, 239, 219, .75)', linenOpacity: .12 },
+  secondary: { pressed: PRESS.secondary, border: FABRIC.edge, stitch: FABRIC.stitch, linenOpacity: .32 },
+  icon: { pressed: PRESS.icon, border: FABRIC.edge, stitch: FABRIC.stitch, linenOpacity: .32 },
+  danger: { pressed: PRESS.danger, border: '#843A38', stitch: 'rgba(255, 239, 219, .75)', linenOpacity: .32 },
+  guide: { pressed: PRESS.guide, border: '#2F6D7D', stitch: 'rgba(255, 239, 219, .75)', linenOpacity: .32 },
+});
 
 const TASK_ART = {
-  care: { title: '照顾小伙伴', mark: '♥', color: '#FBE3DB' },
-  interact: { title: '亲密时光', mark: '♡', color: '#E9F0E8' },
-  game: { title: '星星收集家', mark: '✦', color: '#FFF0D4' },
+  care: { title: '照顾小伙伴', icon: 'feed', color: '#F77C68' },
+  interact: { title: '亲密时光', icon: 'play', color: '#AB78D6' },
+  game: { title: '星星收集家', icon: 'star', color: '#FFF0D4' },
 };
 
 const CARE_SCENE = { wash: 'wash_nook', play: 'play_garden', rest: 'rest_evening' };
@@ -32,6 +46,7 @@ const SCENE_NAMES = ['home_afternoon', 'wash_nook', 'play_garden', 'rest_evening
 // The design scales from the compact screen height to the fully expanded layout.
 const COMPACT_LAYOUT_HEIGHT = 680;
 const EXPANDED_LAYOUT_HEIGHT = 844;
+const GAME_FIELD_COMPACT_HEIGHT = 356;
 const NAV_HEIGHT = 64;
 const HOME_LAYOUT = Object.freeze({
   sceneX: 20, sceneWidth: 350, sceneRadius: 23,
@@ -45,19 +60,19 @@ const HOME_LAYOUT = Object.freeze({
 const HOME_INFO = Object.freeze({ x: 32, width: 326, top: 12,
   growthHeight: 61, adviceTop: 79, adviceHeight: 28, speechTop: 114 });
 const HOME_STATS = Object.freeze([
-  { label: '饱腹', field: 'hunger', color: '#F0734E' },
-  { label: '清洁', field: 'clean', color: '#25B8C3' },
-  { label: '心情', field: 'happy', color: '#E9B42D' },
-  { label: '精力', field: 'energy', color: '#67C565' },
+  { label: '饱腹', field: 'hunger', color: '#F3A34D' },
+  { label: '清洁', field: 'clean', color: '#58AA9B' },
+  { label: '心情', field: 'happy', color: '#B980D6' },
+  { label: '精力', field: 'energy', color: '#599FE0' },
 ]);
 const HOME_ACTIONS = Object.freeze([
-  { id: 'feed', label: '喂食', icon: 'feed', color: '#9F694A', fill: '#F3E3CE' },
-  { id: 'wash', label: '清洁', icon: 'wash', color: '#6D9995', fill: '#E6F0EA' },
-  { id: 'play', label: '玩耍', icon: 'play', color: '#9F694A', fill: '#F3E3CE' },
-  { id: 'rest', label: '休息', icon: 'rest', color: '#8C7F9C', fill: '#EEE6EE' },
+  { id: 'feed', label: '喂食', icon: 'feed', fill: '#FFE0D3', pressed: '#F4A38B' },
+  { id: 'wash', label: '清洁', icon: 'wash', fill: '#D8F1E9', pressed: '#8AD8C4' },
+  { id: 'play', label: '玩耍', icon: 'play', fill: '#EDE5FA', pressed: '#D4AFE9' },
+  { id: 'rest', label: '休息', icon: 'rest', fill: '#DCEBFA', pressed: '#9DC8EE' },
 ]);
 const HEADER_TYPE = Object.freeze({
-  headingSize: 20, descriptionSize: 14, captionSize: 11,
+  headingSize: 24, descriptionSize: 12, captionSize: 10,
   accentAboveHeading: 18, descriptionBelowHeading: 24, captionBelowHeading: 48,
 });
 const HEADER_COIN = Object.freeze({ x: 274, topOffset: 3, width: 69, height: 32 });
@@ -97,6 +112,8 @@ export default class Scene {
     this.time = 0;
     this.petImages = new Map();
     this.sceneImages = new Map();
+    this.linenImage = null;
+    this.uiImages = new Map();
     this.viewport = null;
   }
 
@@ -142,6 +159,136 @@ export default class Scene {
     if (stroke) { c.strokeStyle = stroke; c.lineWidth = line; c.stroke(); }
   }
 
+  loadLinenImage() {
+    if (this.linenImage) return this.linenImage;
+    const createImage = this.canvas.createImage ? () => this.canvas.createImage() :
+      typeof wx !== 'undefined' && wx.createImage ? () => wx.createImage() : null;
+    if (!createImage) return null;
+    try {
+      const image = createImage();
+      const entry = { image, ready: false, failed: false };
+      this.linenImage = entry;
+      image.onload = () => {
+        entry.ready = true;
+        if (this.onAssetReady) this.onAssetReady();
+      };
+      image.onerror = error => {
+        entry.failed = true;
+        logError('scene.linen_load_failed', { message: String(error) });
+      };
+      image.src = LINEN_ASSET;
+      return entry;
+    } catch (error) {
+      logError('scene.linen_create_failed', { message: String(error) });
+      return null;
+    }
+  }
+
+  linenOverlay(x, y, w, h, radius, opacity) {
+    const entry = this.loadLinenImage();
+    if (!entry?.ready || entry.failed || !entry.image.width || !entry.image.height) return;
+    const c = this.ctx;
+    c.save();
+    try {
+      if (radius) { this.roundedPath(x, y, w, h, radius); c.clip(); }
+      c.globalAlpha = opacity;
+      const sourceX = x / 390 * entry.image.width;
+      const sourceY = y / this.h * entry.image.height;
+      const sourceW = w / 390 * entry.image.width;
+      const sourceH = h / this.h * entry.image.height;
+      c.drawImage(entry.image, sourceX, sourceY, sourceW, sourceH, x, y, w, h);
+    } catch (error) {
+      entry.failed = true;
+      logError('scene.linen_draw_failed', { message: String(error) });
+    } finally { c.restore(); }
+  }
+
+  loadUiSprite(name) {
+    if (!Object.prototype.hasOwnProperty.call(UI_SPRITES, name)) {
+      if (!this.unknownUiSprites) this.unknownUiSprites = new Set();
+      if (!this.unknownUiSprites.has(name)) {
+        this.unknownUiSprites.add(name);
+        logWarn('scene.ui_sprite_unknown', { name });
+      }
+      return null;
+    }
+    const path = UI_SPRITES[name];
+    let entry = this.uiImages.get(name);
+    if (!entry) {
+      const createImage = this.canvas.createImage ? () => this.canvas.createImage() :
+        typeof wx !== 'undefined' && wx.createImage ? () => wx.createImage() : null;
+      if (!createImage) return null;
+      try {
+        const image = createImage();
+        entry = { image, ready: false, failed: false };
+        this.uiImages.set(name, entry);
+        image.onload = () => {
+          entry.ready = true;
+          if (this.onAssetReady) this.onAssetReady();
+        };
+        image.onerror = error => {
+          entry.failed = true;
+          logError('scene.ui_sprite_load_failed', { name, message: String(error) });
+        };
+        image.src = path;
+      } catch (error) {
+        logError('scene.ui_sprite_create_failed', { name, message: String(error) });
+        return null;
+      }
+    }
+    return entry;
+  }
+
+  drawUiSprite(name, x, y, w, h) {
+    const entry = this.loadUiSprite(name);
+    if (!entry) return false;
+    if (!entry.ready || entry.failed) return false;
+    try { this.ctx.drawImage(entry.image, x, y, w, h); }
+    catch (error) {
+      entry.failed = true;
+      logError('scene.ui_sprite_draw_failed', { name, message: String(error) });
+      return false;
+    }
+    return true;
+  }
+
+  fabricPanel(x, y, w, h, radius, fill = C.paper, stitch = true) {
+    const c = this.ctx;
+    if (typeof c.save !== 'function') {
+      this.box(x, y, w, h, radius, fill, FABRIC.edge);
+      return;
+    }
+    c.save();
+    c.shadowColor = 'rgba(105, 66, 37, .13)';
+    c.shadowBlur = 11;
+    c.shadowOffsetY = 4;
+    this.box(x, y, w, h, radius, fill, FABRIC.edge, 1);
+    c.restore();
+    this.linenOverlay(x, y, w, h, radius, .42);
+    if (stitch && w > 90 && h > 43) {
+      c.save();
+      this.roundedPath(x + 6, y + 6, w - 12, h - 12, Math.max(2, radius - 5));
+      c.strokeStyle = FABRIC.stitch;
+      c.lineWidth = 1;
+      c.setLineDash([4, 4]);
+      c.stroke();
+      c.restore();
+    }
+  }
+
+  sceneFrame(x, y, w, h, radius) {
+    const c = this.ctx;
+    c.save();
+    this.roundedPath(x, y, w, h, radius);
+    c.strokeStyle = '#C78C59'; c.lineWidth = 5; c.stroke();
+    this.roundedPath(x + 5, y + 5, w - 10, h - 10, Math.max(2, radius - 5));
+    c.strokeStyle = '#FBE2B8'; c.lineWidth = 2; c.stroke();
+    c.setLineDash([5, 5]);
+    this.roundedPath(x + 8, y + 8, w - 16, h - 16, Math.max(2, radius - 8));
+    c.strokeStyle = 'rgba(128, 75, 37, .55)'; c.lineWidth = 1; c.stroke();
+    c.restore();
+  }
+
   loadSceneImage(name) {
     let entry = this.sceneImages.get(name);
     if (!entry) {
@@ -164,11 +311,16 @@ export default class Scene {
           if (this.onAssetReady) this.onAssetReady();
         };
         image.onerror = error => {
-          entry.failed = true;
-          logError('scene.image_load_failed', { name, message: String(error) });
-          if (this.onAssetReady) this.onAssetReady();
+          if (!entry.fallback) {
+            entry.fallback = true;
+            image.src = `assets/scenes/scene_${name}.jpg`;
+          } else {
+            entry.failed = true;
+            logError('scene.image_load_failed', { name, message: String(error) });
+            if (this.onAssetReady) this.onAssetReady();
+          }
         };
-        image.src = `assets/scenes/scene_${name}.jpg`;
+        image.src = `assets/scenes/scene_${name}_felt.jpg`;
       } catch (error) {
         this.sceneImages.delete(name);
         if (!this.failedSceneCreations) this.failedSceneCreations = new Set();
@@ -256,15 +408,53 @@ export default class Scene {
     c.strokeStyle = color; c.lineWidth = width; c.lineCap = 'round'; c.stroke();
   }
 
-  button(id, x, y, w, h, label, fill = C.paper, color = C.ink, border = null, fontSize = 14) {
-    this.box(x, y, w, h, Math.min(16, h / 2), fill, border);
-    this.readableText(label, x + w / 2, y + h / 2 + 1, fontSize, color, 'center', 'bold');
+  button(id, x, y, w, h, label, fill = C.paper, color = C.ink, border = null,
+    fontSize = 14, options = {}) {
+    const style = !options.disabled &&
+      Object.prototype.hasOwnProperty.call(BUTTON_FACE, options.variant) ?
+      BUTTON_FACE[options.variant] : BUTTON_FACE.secondary;
+    const activePress = this.pressedId === id && !options.disabled;
+    const face = activePress ? style.pressed : fill;
+    const inset = activePress ? 1 : 0;
+    const radius = Math.min(24, h / 2);
+    const c = this.ctx;
+    if (typeof c.save === 'function') {
+      c.save();
+      c.shadowColor = 'rgba(96, 57, 34, .18)';
+      c.shadowBlur = activePress ? 2 : 7;
+      c.shadowOffsetY = activePress ? 1 : 3;
+    }
+    this.box(x, y + inset, w, h - inset, radius, face,
+      border || (options.disabled ? C.line : style.border));
+    if (typeof c.restore === 'function') c.restore();
+    if (typeof c.save === 'function') this.linenOverlay(x, y + inset, w, h - inset,
+      radius, style.linenOpacity);
+    if (typeof c.setLineDash === 'function' && w > 110 && h >= 36) {
+      c.save();
+      c.setLineDash([4, 4]);
+      this.roundedPath(x + 5, y + 5 + inset, w - 10, h - 10 - inset,
+        Math.min(12, (h - 10) / 2));
+      c.strokeStyle = style.stitch;
+      c.lineWidth = 1; c.stroke();
+      c.restore();
+    }
+    this.readableText(label, x + w / 2, y + h / 2 + 1 + inset, fontSize, color, 'center', 'bold');
     this.buttons.push({ id, x, y, w, h });
   }
 
-  background() {
+  roundIconButton(id, cx, cy, radius, glyph) {
+    this.circle(cx, cy + 2, radius, 'rgba(99, 62, 39, .14)');
+    this.circle(cx, cy, radius,
+      this.pressedId === id ? PRESS.icon : '#F8EFE5', FABRIC.edge, 1);
+    this.text(glyph, cx, cy + 1, 20, C.brown, 'center');
+    this.buttons.push({ id, x: cx - radius, y: cy - radius,
+      w: radius * 2, h: radius * 2 });
+  }
+
+  background(x = 0, y = 0, w = 390, h = this.h) {
     const c = this.ctx;
-    c.fillStyle = C.cream; c.fillRect(0, 0, 390, this.h);
+    c.fillStyle = C.cream; c.fillRect(x, y, w, h);
+    this.linenOverlay(x, y, w, h, 0, 1);
   }
 
   layout() {
@@ -290,31 +480,31 @@ export default class Scene {
       dockX, dockW, dockY: sceneBottom - HOME_LAYOUT.dockBottom - HOME_LAYOUT.dockHeight };
   }
 
-  header(state, heading, description, caption, settings = true) {
+  header(state, heading, description, caption, settings = true, dark = false) {
     const { ratio } = this.layout();
-    this.circle(37, 36, 16, '#ECD1AE');
-    this.ellipse(37, 40, 7, 6, C.brown);
-    [[28, 31], [34, 27], [41, 27], [47, 31]].forEach(([x, y]) => this.circle(x, y, 2.4, C.brown));
-    this.text('爪爪小屋', 60, 30, 15, C.ink, 'left', 'bold');
-    this.text('P A W P A W   H O U S E', 60, 47, 7, C.muted);
+    const headingColor = dark ? '#FFF8E8' : C.ink;
+    const detailColor = dark ? '#FBE9CA' : C.brown;
+    this.text('爪爪小屋', 20, 35, 18, headingColor, 'left', 'bold');
     const controlsY = this.headerControlsY;
     const coinY = controlsY + HEADER_COIN.topOffset;
-    this.box(HEADER_COIN.x, coinY, HEADER_COIN.width, HEADER_COIN.height,
-      HEADER_COIN.height / 2, C.peach);
+    this.fabricPanel(HEADER_COIN.x, coinY, HEADER_COIN.width, HEADER_COIN.height,
+      HEADER_COIN.height / 2, C.peach, false);
     this.text('✦  ' + state.coins, HEADER_COIN.x + HEADER_COIN.width / 2,
       coinY + HEADER_COIN.height / 2 + 1,
       13, C.brown, 'center', 'bold');
     if (settings) {
+      this.circle(365, controlsY + 19, 18,
+        this.pressedId === 'settings' ? PRESS.icon : '#F8EFE5');
       this.text('⚙', 366, controlsY + 19, 20, C.brown, 'center');
       this.buttons.push({ id: 'settings', x: 346, y: controlsY, w: 38, h: 38 });
     }
     const headingY = 83 + 16 * ratio;
-    this.box(20, headingY - HEADER_TYPE.accentAboveHeading, 22, 2, 1, C.coral);
-    this.text(heading, 20, headingY, HEADER_TYPE.headingSize, C.ink, 'left', 'bold');
+    this.text(heading, 20, headingY, dark ? 27 : HEADER_TYPE.headingSize,
+      headingColor, 'left', 'bold');
     this.text(description, 20, headingY + HEADER_TYPE.descriptionBelowHeading,
-      HEADER_TYPE.descriptionSize, C.brown);
+      HEADER_TYPE.descriptionSize, detailColor);
     if (ratio > .3 && caption) this.text(caption, 20,
-      headingY + HEADER_TYPE.captionBelowHeading, HEADER_TYPE.captionSize, C.muted);
+      headingY + HEADER_TYPE.captionBelowHeading, HEADER_TYPE.captionSize, detailColor);
   }
 
   face(expression, t) {
@@ -471,24 +661,26 @@ export default class Scene {
 
   drawHomeGauge(x, y, value, color) {
     const c = this.ctx;
-    const centerY = y + HOME_LAYOUT.gaugeSize / 2;
-    const start = Math.PI * .75;
-    const sweep = Math.PI * 1.5;
+    const centerY = y + 42;
+    const start = Math.PI;
+    const sweep = Math.PI;
     c.save();
     c.lineWidth = HOME_LAYOUT.gaugeStroke;
     c.lineCap = 'round';
     c.beginPath(); c.arc(x, centerY, HOME_LAYOUT.gaugeRadius, start, start + sweep);
-    c.strokeStyle = '#E4D6C1'; c.stroke();
+    c.strokeStyle = '#E8DDD1'; c.stroke();
     if (value > 0) {
       c.beginPath(); c.arc(x, centerY, HOME_LAYOUT.gaugeRadius,
         start, start + sweep * clamp(value, 0, 100) / 100);
       c.strokeStyle = color; c.stroke();
     }
     c.restore();
-    this.text(`${Math.round(value)}%`, x, centerY, 13, C.ink, 'center', 'bold');
+    this.text(`${Math.round(value)}%`, x, centerY - 7, 13, C.ink, 'center', 'bold');
   }
 
   homeStats(pet, layout) {
+    this.fabricPanel(HOME_LAYOUT.sceneX, layout.gaugeY - 6, HOME_LAYOUT.sceneWidth,
+      this.layout().navY - layout.gaugeY + 1, 17, '#FFF3E2', false);
     const columnWidth = HOME_LAYOUT.sceneWidth / HOME_STATS.length;
     HOME_STATS.forEach((stat, index) => {
       const x = HOME_LAYOUT.sceneX + columnWidth * (index + .5);
@@ -526,27 +718,27 @@ export default class Scene {
   }
 
   homeActions(state, layout) {
-    const c = this.ctx;
-    c.save(); c.shadowColor = 'rgba(75,46,28,.15)'; c.shadowBlur = 12; c.shadowOffsetY = 3;
-    this.box(layout.dockX, layout.dockY, layout.dockW, HOME_LAYOUT.dockHeight,
-      HOME_LAYOUT.dockRadius, 'rgba(255,249,239,.94)');
-    c.restore();
+    this.fabricPanel(layout.dockX, layout.dockY - 8, layout.dockW,
+      HOME_LAYOUT.dockHeight + 12, 23, 'rgba(255,249,239,.9)', false);
     const columnWidth = layout.dockW / HOME_ACTIONS.length;
     HOME_ACTIONS.forEach((action, index) => {
       const effect = CARE_ACTIONS[action.id];
       const x = layout.dockX + columnWidth * (index + .5);
       const block = careBlock(state, action.id);
       const unavailable = !!block;
-      const iconY = layout.dockY + 22;
-      const iconColor = unavailable ? '#AC9A89' : action.color;
-      const iconFill = unavailable ? '#E9DFD2' : action.fill;
-      this.circle(x, iconY, 15, iconFill);
-      this.careIcon(action.icon, x, iconY, iconColor);
-      this.readableText(action.label, x, layout.dockY + 45, 11,
+      const iconY = layout.dockY + 18;
+      // A blocked care action stays tappable so its specific reason can be shown.
+      const iconFill = this.pressedId === action.id ? action.pressed : action.fill;
+      this.circle(x, iconY + 3, 27, 'rgba(104, 67, 44, .17)');
+      this.circle(x, iconY, 27, iconFill, 'rgba(255, 255, 255, .8)', 1.5);
+      if (!this.drawUiSprite(`care-${action.icon}-v2`, x - 25,
+        iconY - 25 + (this.pressedId === action.id ? 1 : 0), 50, 50))
+        this.careIcon(action.icon, x, iconY, C.paper, iconFill);
+      this.readableText(action.label, x, layout.dockY + 50, 11,
         C.brown, 'center', 'bold');
       this.readableText(careShortReason(block, action.id, this.scale < 1) ||
         (effect.cost ? `✦ ${effect.cost}` : '免费'),
-      x, layout.dockY + 64, 9, unavailable ? C.brown : C.muted, 'center');
+      x, layout.dockY + 70, 9, unavailable ? C.brown : C.muted, 'center');
       this.buttons.push({ id: action.id,
         x: layout.dockX + index * columnWidth + 2,
         y: layout.dockY + 2, w: columnWidth - 4, h: HOME_LAYOUT.dockHeight - 4 });
@@ -562,18 +754,25 @@ export default class Scene {
     const backdrop = CARE_SCENE[display.action] || 'home_afternoon';
     this.sceneBackdrop(backdrop, HOME_LAYOUT.sceneX, layout.sceneY,
       HOME_LAYOUT.sceneWidth, layout.sceneH, HOME_LAYOUT.sceneRadius, '#F2D8B8');
-    this.box(HOME_LAYOUT.sceneX, layout.sceneY, HOME_LAYOUT.sceneWidth, layout.sceneH,
-      HOME_LAYOUT.sceneRadius, 'rgba(0,0,0,0)', C.coral, 1.5);
+    this.sceneFrame(HOME_LAYOUT.sceneX, layout.sceneY, HOME_LAYOUT.sceneWidth,
+      layout.sceneH, HOME_LAYOUT.sceneRadius);
+    this.loadUiSprite('care-wash-front');
+    this.loadUiSprite('care-rest-front');
     const petSize = clamp(layout.sceneH / HOME_LAYOUT.petScaleHeight, .8, 1.08);
     this.pet(pet.id, sceneCenterX, layout.dockY - petSize * 130, petSize, this.time,
       display.expression, display.action);
+    if (display.action === 'wash' || display.action === 'rest') {
+      const prop = display.action === 'wash' ? 'care-wash-front' : 'care-rest-front';
+      this.drawUiSprite(prop, sceneCenterX - 142 * petSize,
+        layout.dockY - 150 * petSize, 284 * petSize, 97 * petSize);
+    }
     this.buttons.push({ id: 'pet_tap', x: 82, y: layout.sceneY + 4,
       w: 225, h: layout.dockY - layout.sceneY - 4 });
     const infoX = HOME_INFO.x, infoY = layout.sceneY + HOME_INFO.top;
     const homeGuide = this.visibleGuide(state, ui);
     if (!homeGuide || homeGuide.phase === 'outro') {
       this.box(infoX, infoY, HOME_INFO.width, HOME_INFO.growthHeight,
-        12, 'rgba(255,249,239,.94)');
+        12, this.pressedId === 'home_growth_help' ? PRESS.row : 'rgba(255,249,239,.94)');
       this.text(`${pet.name} · LV. ${pet.level}`, infoX + 11, infoY + 14,
         13, C.brown, 'left', 'bold');
       const growth = growthSummary(pet);
@@ -587,7 +786,7 @@ export default class Scene {
       const adviceY = layout.sceneY + HOME_INFO.adviceTop;
       const closeWidth = 38;
       this.box(infoX, adviceY, HOME_INFO.width, HOME_INFO.adviceHeight,
-        13, 'rgba(255,249,239,.94)');
+        13, this.pressedId === 'home_advice' ? PRESS.row : 'rgba(255,249,239,.94)');
       const explaining = ui.adviceExplanation?.until > Date.now();
       const fullAdvice = explaining ? ui.adviceExplanation.detail : homeAdviceText(advice);
       const fontSize = Math.max(11, 11 / this.scale);
@@ -601,6 +800,9 @@ export default class Scene {
         (compact ? ui.adviceExplanation.compactDetail : fullAdvice) : homeAdviceText(advice, compact);
       this.readableText(displayAdvice, infoX + 11,
         adviceY + HOME_INFO.adviceHeight / 2, 11, C.brown, 'left', 'bold');
+      if (this.pressedId === 'home_advice_close') this.box(
+        infoX + HOME_INFO.width - closeWidth, adviceY, closeWidth,
+        HOME_INFO.adviceHeight, 13, PRESS.icon);
       this.text('×', infoX + HOME_INFO.width - closeWidth / 2,
         adviceY + HOME_INFO.adviceHeight / 2, 17, C.muted, 'center');
       this.buttons.push({ id: 'home_advice', x: infoX, y: adviceY,
@@ -631,23 +833,70 @@ export default class Scene {
 
   nav(active, state) {
     const y = this.layout().navY;
-    this.box(20, y, 350, 1, 1, C.line);
-    [['home', '⌂', '小屋'], ['collection', '♡', '萌宠'],
-      ['tasks', '✓', '任务'], ['game', '✦', '游戏']].forEach((item, i) => {
-      const x = 20 + i * 87.5;
+    this.box(0, y - 1, 390, NAV_HEIGHT + 1, 0, C.paper);
+    this.linenOverlay(0, y, 390, NAV_HEIGHT, 0, .55);
+    this.line([[0, y], [390, y]], FABRIC.edge, 1);
+    [['home', '小屋'], ['collection', '萌宠'],
+      ['tasks', '任务'], ['game', '游戏']].forEach((item, i) => {
+      const x = i * 97.5;
       const selected = active === item[0];
-      if (selected) this.box(x + 30, y, 27, 3, 1.5, C.coral);
-      this.text(item[1], x + 44, y + 27, 23, selected ? C.coral : C.brown, 'center');
-      this.readableText(item[2], x + 44, y + 54, 11,
-        selected ? C.coral : C.muted, 'center', selected ? 'bold' : 'normal');
+      if (this.pressedId === 'nav_' + item[0])
+        this.box(x + 8, y + 5, 81, NAV_HEIGHT - 10, 14, PRESS.nav);
+      this.navIcon(item[0], x + 48.75, y + 27,
+        selected ? '#418F81' : C.brown, selected);
+      this.readableText(item[1], x + 48.75, y + 54, 11,
+        selected ? '#418F81' : C.muted, 'center', selected ? 'bold' : 'normal');
       this.buttons.push({ id: 'nav_' + item[0], x, y: y + 3,
-        w: 87, h: NAV_HEIGHT - 7 });
+        w: 97.5, h: NAV_HEIGHT - 7 });
     });
     const pending = active === 'home' ? pendingDailyTaskCount(state) : 0;
     if (pending) {
-      this.box(225, y + 3, 55, 18, 9, C.coral);
-      this.readableText(`待领 ${pending}`, 252.5, y + 12, 9, '#FFF', 'center', 'bold');
+      this.box(247, y + 3, 55, 18, 9, C.coral);
+      this.readableText(`待领 ${pending}`, 274.5, y + 12, 9, '#FFF', 'center', 'bold');
     }
+  }
+
+  navIcon(id, x, y, color, selected) {
+    const c = this.ctx;
+    c.save();
+    c.strokeStyle = color; c.fillStyle = color;
+    c.lineWidth = 2; c.lineCap = 'round'; c.lineJoin = 'round';
+    c.translate(x, y);
+    if (id === 'home') {
+      c.beginPath(); c.moveTo(-12, -2); c.lineTo(0, -12);
+      c.lineTo(12, -2); c.lineTo(9, 0); c.lineTo(9, 10);
+      c.lineTo(-9, 10); c.lineTo(-9, 0); c.closePath();
+      if (selected) c.fill(); else c.stroke();
+      c.strokeStyle = selected ? '#FFF9F0' : color;
+      c.strokeRect(-2, 3, 4, 7);
+    } else if (id === 'collection') {
+      c.beginPath(); c.moveTo(-9, -3); c.lineTo(-10, -11);
+      c.lineTo(-4, -7); c.quadraticCurveTo(0, -8, 4, -7);
+      c.lineTo(10, -11); c.lineTo(9, -3);
+      c.quadraticCurveTo(13, 10, 0, 11);
+      c.quadraticCurveTo(-13, 10, -9, -3); c.closePath();
+      if (selected) c.fill(); else c.stroke();
+      const faceColor = selected ? '#FFF9F0' : color;
+      this.circle(-4, 1, 1.2, faceColor); this.circle(4, 1, 1.2, faceColor);
+      this.curve(-3, 6, 0, 9, 3, 6, faceColor, 1.2);
+    } else if (id === 'tasks') {
+      this.roundedPath(-10, -11, 20, 22, 3);
+      if (selected) c.fill(); else c.stroke();
+      this.line([[-5, 0], [-1, 4], [6, -4]], selected ? '#FFF9F0' : color, 2);
+    } else {
+      c.beginPath(); c.moveTo(-11, -5);
+      c.quadraticCurveTo(-9, -10, -3, -9); c.lineTo(3, -9);
+      c.quadraticCurveTo(9, -10, 11, -5);
+      c.lineTo(13, 5); c.quadraticCurveTo(13, 10, 8, 9);
+      c.lineTo(3, 5); c.lineTo(-3, 5); c.lineTo(-8, 9);
+      c.quadraticCurveTo(-13, 10, -13, 5); c.closePath();
+      if (selected) c.fill(); else c.stroke();
+      const buttonColor = selected ? '#FFF9F0' : color;
+      this.line([[-7, -2], [-7, 3]], buttonColor, 1.6);
+      this.line([[-9.5, .5], [-4.5, .5]], buttonColor, 1.6);
+      this.circle(6, -1, 1.3, buttonColor); this.circle(9, 2, 1.3, buttonColor);
+    }
+    c.restore();
   }
 
   collection(state) {
@@ -660,33 +909,52 @@ export default class Scene {
       const card = petCardState(state, spec.id);
       const owned = card.kind === 'current' || card.kind === 'owned';
       const selected = card.kind === 'current';
-      if (selected) this.box(20, y, 350, rowH, 19, C.wash, C.coral, 1.5);
-      else this.box(20, y + rowH - 1, 350, 1, 1, C.line);
-      const thumbY = y + 12;
-      this.box(32, thumbY, 112, rowH - 24, 17,
-        i === 0 ? '#F9EBDD' : i === 1 ? '#EEE7E7' : '#F4E5D8');
-      const petSize = (rowH - 28) / 300;
-      this.pet(spec.id, 88, y + rowH - 21 - petSize * 130, petSize, this.time);
+      this.fabricPanel(20, y, 350, rowH, 19,
+        selected ? '#EEF8F1' : C.paper, true);
+      const portraitY = y + rowH / 2;
+      const portraitFill = i === 0 ? '#E1EEE5' : i === 1 ? '#EAE4F5' : '#F8E9D3';
+      this.circle(88, portraitY, 55, portraitFill, FABRIC.edge, 2);
+      const c = this.ctx;
+      c.save();
+      c.beginPath(); c.arc(88, portraitY, 52, 0, Math.PI * 2); c.clip();
+      this.pet(spec.id, 88, portraitY + 26, .53, this.time);
+      c.restore();
       this.readableText(spec.type, 155, y + 31, 10, C.muted);
       this.text(owned ? state.pets[spec.id].name : spec.name,
         155, y + 56, 20, C.ink, 'left', 'bold');
       this.readableText(spec.line, 155, y + 81, 10, C.muted);
       if (owned) {
-        this.readableText(`Lv. ${state.pets[spec.id].level} · ${selected ? '当前陪伴' : '已领养'}`,
-          155, y + rowH - 24, 10, C.coral);
+        const statusLabel = selected ? '当前陪伴' : '已领养';
+        const statusFontSize = Math.max(10, 11 / this.scale);
+        c.save();
+        c.font = `normal ${statusFontSize}px sans-serif`;
+        const measuredWidth = c.measureText(statusLabel)?.width;
+        c.restore();
+        const textWidth = Number.isFinite(measuredWidth) ? measuredWidth :
+          Array.from(statusLabel).length * statusFontSize;
+        const statusWidth = Math.ceil(textWidth + 24);
+        this.box(155, y + rowH - 37, statusWidth, 22, 11,
+          selected ? '#D8F1E9' : '#F5E9D9');
+        this.readableText(statusLabel, 155 + statusWidth / 2,
+          y + rowH - 26, 10, selected ? '#296C62' : C.brown, 'center');
       } else {
-        this.readableText(card.cost ? `未领养 · 需 ${card.cost} 爪爪币` : '免费领养',
-          155, y + rowH - 52, 10, C.coral);
-        if (card.kind === 'short') this.readableText(`还差 ${card.missing} 爪爪币`,
-          155, y + rowH - 19, 10, C.coral, 'left', 'bold');
+        if (card.kind === 'short') {
+          this.readableText(`还差 ${card.missing}爪爪币`, 155, y + rowH - 28,
+            11, C.coral, 'left', 'bold');
+        } else {
+          this.readableText(card.cost ? `需 ${card.cost} 爪爪币` : '免费领养',
+            155, y + rowH - 28, 10, C.coral);
+        }
       }
       const actionId = selected ? 'current_' + spec.id : owned ? 'select_' + spec.id :
         card.kind === 'short' ? 'get_coins_' + spec.id : 'adopt_' + spec.id;
-      this.button(actionId, 276, y + rowH - 40, 82, 29,
+      this.button(actionId, 266, y + rowH - 46, 92, 35,
         owned ? selected ? '陪伴中' : '切换陪伴' :
           card.kind === 'short' ? '获取爪爪币' : '领养',
-        selected ? C.coral : C.paper, selected ? '#FFF' : C.brown,
-        selected ? null : C.line, 10);
+        selected ? STATIC_FILL : owned ? C.paper : C.coral,
+        selected ? C.muted : owned ? C.brown : '#FFF',
+        selected || !owned ? null : C.line, 10,
+        { disabled: selected, variant: owned ? 'secondary' : 'primary' });
     });
     this.nav('collection', state);
   }
@@ -696,17 +964,20 @@ export default class Scene {
     const card = petCardState(state, speciesId);
     if (!species || !card) return;
     this.dim(); this.buttons = [];
-    const y = this.h / 2 - 117;
-    this.box(36, y, 318, 234, 24, C.paper);
+    const y = this.h / 2 - 174;
+    this.fabricPanel(36, y, 318, 348, 24);
     this.text(`用 ${card.cost} 爪爪币领养${species.name}？`,
-      195, y + 52, 18, C.ink, 'center', 'bold');
+      195, y + 44, 18, C.ink, 'center', 'bold');
     this.readableText('确认后将成为当前陪伴',
-      195, y + 88, 12, C.brown, 'center');
+      195, y + 75, 12, C.brown, 'center');
+    this.circle(195, y + 153, 64, '#F4EADB', FABRIC.edge, 2);
+    this.pet(speciesId, 195, y + 174, .43, this.time);
     this.readableText(card.kind === 'short' ? `还差 ${card.missing} 爪爪币` :
       `领养后剩余 ${state.coins - card.cost} 爪爪币`,
-      195, y + 121, 12, C.muted, 'center');
-    this.button('adopt_confirm', 65, y + 152, 260, 40, '确认领养', C.coral, '#FFF');
-    this.button('adopt_cancel', 65, y + 199, 260, 27, '再看看', C.paper, C.brown);
+      195, y + 245, 12, C.muted, 'center');
+    this.button('adopt_confirm', 65, y + 265, 260, 40, '确认领养', C.coral,
+      '#FFF', null, 14, { variant: 'primary' });
+    this.button('adopt_cancel', 65, y + 311, 260, 28, '再看看', C.paper, C.brown);
   }
 
   coinWaysModal(offer, scroll) {
@@ -714,7 +985,7 @@ export default class Scene {
     const { modalY, modalHeight, top, bottom, listHeight, maxScroll } =
       coinWaysLayout(this.h, offer.ways.length);
     const safeScroll = clamp(scroll || 0, 0, maxScroll);
-    this.box(28, modalY, 334, modalHeight, 24, C.paper);
+    this.fabricPanel(28, modalY, 334, modalHeight, 24);
     this.text(offer.title, 195, modalY + 39, 18, C.ink, 'center', 'bold');
     this.readableText('选择一种获取方式', 195, modalY + 68, 12, C.brown, 'center');
     const c = this.ctx;
@@ -729,7 +1000,9 @@ export default class Scene {
       offer.ways.forEach((way, index) => {
         const rowY = top + index * COIN_WAYS_ROW_STEP - safeScroll;
         if (rowY + 62 <= top || rowY >= bottom) return;
-        this.box(44, rowY + 2, 302, 61, 15, way.page ? C.wash : '#EFE3D3');
+        this.box(44, rowY + 2, 302, 61, 15,
+          this.pressedId === 'coin_way_' + way.id ? PRESS.row :
+            way.page ? '#F5E9D9' : STATIC_FILL);
         this.readableText(way.title, 57, rowY + 23, 12, C.ink, 'left', 'bold');
         this.readableText(way.hint, 57, rowY + 45, 10, C.muted);
         if (way.page) {
@@ -751,24 +1024,41 @@ export default class Scene {
 
   growthHelp() {
     this.dim(); this.buttons = [];
-    const y = this.h / 2 - 105;
-    this.box(36, y, 318, 210, 24, C.paper);
-    this.text('关于成长', 195, y + 40, 18, C.ink, 'center', 'bold');
+    const y = this.h / 2 - 178;
+    this.fabricPanel(36, y, 318, 356, 24);
+    this.text('关于成长', 195, y + 43, 21, C.ink, 'center', 'bold');
+    this.circle(80, y + 96, 23, '#DDF0E4');
+    this.line([[80, y + 107], [80, y + 90]], '#4F9D73', 2);
+    this.ellipse(73, y + 89, 8, 4, '#67B98A', -.55);
+    this.ellipse(87, y + 86, 8, 4, '#67B98A', .55);
+    this.text('成长值', 112, y + 83, 15, C.ink, 'left', 'bold');
+    this.readableText('照料伙伴可以获得成长。', 112, y + 110, 11, C.brown);
+    this.line([[56, y + 137], [334, y + 137]], FABRIC.stitch, 1);
+    this.circle(80, y + 170, 23, '#FFF0D2');
+    if (!this.drawUiSprite('star', 63, y + 153, 34, 34))
+      this.text('✦', 80, y + 172, 27, C.gold, 'center', 'bold');
+    this.text('等级', 112, y + 157, 15, C.ink, 'left', 'bold');
+    this.readableText('成长积累后会提升等级。', 112, y + 184, 11, C.brown);
+    this.line([[56, y + 210], [334, y + 210]], FABRIC.stitch, 1);
+    this.circle(80, y + 247, 23, '#FCE3D7');
+    this.box(69, y + 237, 22, 20, 4, '#F47E6C');
+    this.box(69, y + 239, 22, 5, 2, '#FFF1E2');
+    this.text('每日上限', 112, y + 230, 15, C.ink, 'left', 'bold');
     GROWTH_HELP_LINES.forEach((line, index) => this.readableText(line,
-      195, y + 85 + index * 27, 12, C.brown, 'center'));
-    this.button('home_growth_close', 65, y + 157, 260, 38,
-      '知道啦', C.coral, '#FFF');
+      112, y + 255 + index * 18, 10, C.brown));
+    this.button('home_growth_close', 65, y + 300, 260, 41,
+      '知道啦', C.coral, '#FFF', null, 14, { variant: 'primary' });
   }
 
   rewardHelp(help) {
     this.dim(); this.buttons = [];
     const y = this.h / 2 - 112;
-    this.box(31, y, 328, 224, 24, C.paper);
+    this.fabricPanel(31, y, 328, 224, 24);
     this.text(help.title, 195, y + 38, 18, C.ink, 'center', 'bold');
     help.lines.forEach((line, index) => this.readableText(line,
       195, y + 83 + index * 27, 11, C.brown, 'center'));
     this.button('reward_help_close', 65, y + 171, 260, 38,
-      '知道啦', C.coral, '#FFF');
+      '知道啦', C.coral, '#FFF', null, 14, { variant: 'primary' });
   }
 
   welcome(state, ui) {
@@ -777,7 +1067,7 @@ export default class Scene {
     const visualH = sceneH + Math.max(WELCOME_MIN_EXTENSION,
       (this.h - COMPACT_LAYOUT_HEIGHT) * WELCOME_HEIGHT_EXTENSION_RATE);
     this.sceneBackdrop('home_afternoon', 20, sceneY, 350, visualH, 23, '#F2D8B8');
-    this.box(20, sceneY, 350, visualH, 23, 'rgba(0,0,0,0)', C.coral, 1.5);
+    this.sceneFrame(20, sceneY, 350, visualH, 23);
     const petSize = clamp(visualH / 300, .72, 1.08);
     this.pet('cat', 195, sceneY + visualH - 130 * petSize - 6, petSize, this.time);
     const infoY = sceneY + visualH + 23;
@@ -787,22 +1077,45 @@ export default class Scene {
     this.readableText('糯米和团团也会在小屋里等你认识',
       195, this.h - 137, 11, C.muted, 'center');
     this.button('adopt_selected', 53, this.h - 114, 284, 53,
-      '免费领养奶糖  →', C.coral, '#FFF', null, 15);
+      '免费领养奶糖  →', C.coral, '#FFF', null, 15, { variant: 'primary' });
   }
 
   tasks(state) {
     this.header(state, '每日清单', '今天的小小约定', '做一点小事，换一份好心情');
-    const { sceneY, ratio, extra } = this.layout();
+    const { sceneY, ratio } = this.layout();
     const todayTasks = taskSnapshot(state);
     const progress = todayTasks?.progress || {};
     const completed = TASKS.filter(task => (progress[task.id] || 0) >= task.target).length;
-    this.box(20, sceneY, 350, 58, 18, '#EED7B4');
-    const compact = this.scale < .9;
-    this.readableText(`今日目标 ${completed}/${TASKS.length}`, 38,
-      sceneY + (compact ? 19 : 29), 14, C.brown, 'left', 'bold');
-    this.readableText('把小事变成好回忆  ✦', 352,
-      sceneY + (compact ? 43 : 29), 10, C.muted, 'right');
-    const rowStart = sceneY + 69;
+    const summaryHeight = 104;
+    this.fabricPanel(20, sceneY, 170, summaryHeight, 18, C.paper, true);
+    this.fabricPanel(200, sceneY, 170, summaryHeight, 18, C.paper, true);
+    const c = this.ctx;
+    c.save();
+    c.lineWidth = 8; c.lineCap = 'round';
+    c.beginPath(); c.arc(105, sceneY + 42, 26, Math.PI * .75, Math.PI * 2.25);
+    c.strokeStyle = '#BDDCD2'; c.stroke();
+    c.beginPath(); c.arc(105, sceneY + 42, 26, Math.PI * .75,
+      Math.PI * (.75 + 1.5 * completed / TASKS.length));
+    c.strokeStyle = C.mint; c.stroke();
+    c.restore();
+    this.text(`${completed}/${TASKS.length}`, 105, sceneY + 40,
+      20, C.ink, 'center', 'bold');
+    this.readableText('今日完成', 105, sceneY + 84, 12, C.brown, 'center', 'bold');
+    const gift = giftClaimState(state);
+    if (!this.drawUiSprite('gift-felt-v2', 224, sceneY + 12, 40, 42)) {
+      this.box(229, sceneY + 21, 30, 27, 6, '#B997DC', '#8566AA');
+      this.box(241, sceneY + 21, 6, 27, 2, '#F6DF8B');
+      this.box(226, sceneY + 17, 36, 8, 3, '#D1AFE9');
+    }
+    this.readableText('每日礼物', 272, sceneY + 27, 13, C.ink, 'left', 'bold');
+    this.readableText(`+${DAILY_GIFT_COINS} 爪爪币`,
+      272, sceneY + 48, 10, C.brown);
+    this.button('daily', 213, sceneY + 65, 144, 30,
+      rewardButtonLabel(gift.kind, true),
+      gift.kind === 'claimed' ? STATIC_FILL : C.coral,
+      gift.kind === 'claimed' ? C.muted : '#FFF',
+      null, 10, { disabled: gift.kind === 'claimed', variant: 'primary' });
+    const rowStart = sceneY + summaryHeight + 10;
     const rowStep = 105 + 19 * ratio;
     TASKS.forEach((task, i) => {
       const y = rowStart + i * rowStep;
@@ -811,8 +1124,14 @@ export default class Scene {
       const count = clamp(status.progress || 0, 0, task.target);
       const done = count >= task.target;
       const claimedThis = status.kind === 'claimed';
-      this.circle(54, y + 24, 19, art.color);
-      this.text(art.mark, 54, y + 25, 20, C.coral, 'center', 'bold');
+      if (art.icon === 'star') {
+        this.circle(54, y + 24, 20, art.color);
+        if (!this.drawUiSprite('star', 39, y + 9, 30, 30))
+          this.text('✦', 54, y + 25, 20, C.coral, 'center', 'bold');
+      } else if (!this.drawUiSprite(`care-${art.icon}-v2`, 34, y + 4, 40, 40)) {
+        this.circle(54, y + 24, 20, art.color);
+        this.careIcon(art.icon, 54, y + 24, C.paper, art.color);
+      }
       this.text(art.title, 82, y + 17, 15, C.ink, 'left', 'bold');
       this.readableText(task.label, 82, y + (status.kind === 'date_guard' ? 40 : 48),
         10, C.muted);
@@ -825,99 +1144,148 @@ export default class Scene {
         'task_go_' + task.id, 277, y + 62, 80, 30,
         rewardButtonLabel(status.kind) ||
           (task.id === 'game' ? '去游戏 →' : '去完成 →'),
-        claimedThis || status.kind === 'date_guard' ? '#EFE3D3' : done ? C.coral : C.paper,
+        claimedThis || status.kind === 'date_guard' ? STATIC_FILL : done ? C.coral : C.paper,
         claimedThis || status.kind === 'date_guard' ? C.muted : done ? '#FFF' : C.coral,
-        !claimedThis && !done ? C.line : null, 10);
-      this.box(36, y + 99, 318, 1, 1, C.line);
+        !claimedThis && !done ? C.line : null, 10,
+        { disabled: claimedThis || status.kind === 'date_guard',
+          variant: done ? 'primary' : 'secondary' });
+      if (i < TASKS.length - 1) {
+        const c = this.ctx;
+        c.save(); c.beginPath(); c.setLineDash([5, 5]);
+        c.moveTo(36, y + 100); c.lineTo(354, y + 100);
+        c.strokeStyle = FABRIC.stitch; c.lineWidth = 1; c.stroke(); c.restore();
+      }
     });
-    const giftY = rowStart + TASKS.length * rowStep + 6 + extra;
-    const gift = giftClaimState(state);
-    this.box(20, giftY, 350, 51, 17, C.wash);
-    this.readableText(`✦  每日礼物 · +${DAILY_GIFT_COINS} 爪爪币`,
-      37, giftY + 26, 11, C.brown);
-    this.button('daily', 281, giftY + 11, 77, 30,
-      rewardButtonLabel(gift.kind, true),
-      gift.kind === 'claimed' ? '#E6D5C0' : C.coral,
-      gift.kind === 'claimed' ? C.muted : '#FFF',
-      null, 10);
     this.nav('tasks', state);
   }
 
   gameField() {
     const { sceneY, ratio, extra } = this.layout();
-    const h = 356 + 104 * ratio + extra;
+    const h = GAME_FIELD_COMPACT_HEIGHT + 104 * ratio + extra;
     return { x: 20, y: sceneY, w: 350, h, bottom: sceneY + h };
   }
 
   game(state, ui) {
-    this.header(state, '星星接接乐', '把星光装进小篮子', '20 秒，来一场轻松的冒险');
+    this.sceneBackdrop('star_sky', 0, 0, 390, this.layout().navY,
+      0, '#174768', .12);
+    this.header(state, '星星接接乐', '把星光装进小篮子', '', true, true);
     const field = this.gameField();
     const fieldY = field.y, fieldH = field.h;
-    this.sceneBackdrop('star_sky', field.x, fieldY, field.w, fieldH, 23, '#174768', .12);
-    this.box(field.x, fieldY, field.w, fieldH, 23, 'rgba(0,0,0,0)', C.coral, 1.5);
     if (ui.playing) {
-      this.box(36, fieldY + 13, 246, 38, 19, C.paper);
-      this.text('✦  ' + ui.score, 54, fieldY + 33, 16, C.ink, 'left', 'bold');
-      this.readableText(Math.ceil(ui.remaining) + ' 秒', 267,
-        fieldY + 33, 12, C.brown, 'right', 'bold');
+      this.fabricPanel(36, fieldY + 13, 116, 53, 16, C.paper, false);
+      this.fabricPanel(164, fieldY + 13, 116, 53, 16, C.paper, false);
+      this.readableText('得分', 52, fieldY + 29, 10, C.brown);
+      this.text(ui.score, 52, fieldY + 51, 19, C.ink, 'left', 'bold');
+      this.readableText('时间', 180, fieldY + 29, 10, C.brown);
+      this.text(Math.ceil(ui.remaining) + 's', 180, fieldY + 51, 19, C.ink, 'left', 'bold');
       this.button('pause_game', 306, fieldY + 13, 43, 38, 'Ⅱ', C.paper, C.brown);
-      (ui.stars || []).forEach(s => this.text('✦', s.x, s.y, 34, '#FFD777', 'center', 'bold'));
-      this.box(ui.basketX - 43, fieldY + fieldH - 50, 86, 28, 12, '#D8937E');
-      this.box(ui.basketX - 48, fieldY + fieldH - 53, 96, 10, 5, '#A46B56');
+      (ui.stars || []).forEach(s => {
+        if (!this.drawUiSprite('star', s.x - 17, s.y - 17, 34, 34))
+          this.text('✦', s.x, s.y, 34, '#FFD777', 'center', 'bold');
+      });
+      if (!this.drawUiSprite('basket', ui.basketX - 48,
+        fieldY + fieldH - 66, 96, 52)) {
+        this.box(ui.basketX - 43, fieldY + fieldH - 50, 86, 28, 12, '#D8937E');
+        this.box(ui.basketX - 48, fieldY + fieldH - 53, 96, 10, 5, '#A46B56');
+      }
     } else {
       const gameTask = TASKS.find(task => task.id === 'game');
       const hideTaskHint = state.tasks?.date !== ui.gameOutcome?.taskDate ||
         state.tasks?.claimed?.game || state.tasks?.progress?.game < gameTask.target;
       const result = gameOutcomeView(ui.gameOutcome, hideTaskHint);
       if (result) {
-        this.box(40, fieldY + 16, 310, fieldH - 32, 18, 'rgba(17,57,79,.84)');
-        this.text(result.title, 195, fieldY + 51, 20, '#FFF9E7', 'center', 'bold');
-        result.lines.forEach((line, index) => this.readableText(line, 195,
-          fieldY + 78 + index * 22, 11, index === 0 ? '#FFD777' : '#FFF1D3', 'center'));
-        if (result.taskHint) {
-          this.readableText(result.taskHint, 195, field.bottom - 132,
-            10, '#FFD777', 'center', 'bold');
-          this.buttons.push({ id: 'game_task_reward', x: 51,
-            y: field.bottom - 150, w: 288, h: 32 });
+        if (ui.gameOutcome.kind === 'aborted') {
+          const panelHeight = 214;
+          const panelY = fieldY + (fieldH - panelHeight) / 2;
+          this.fabricPanel(40, panelY, 310, panelHeight, 20, C.paper);
+          this.text(result.title, 195, panelY + 44, 20, C.ink, 'center', 'bold');
+          this.readableText(result.lines[0], 195, panelY + 75,
+            11, C.coral, 'center');
+          this.button('start_game', 56, panelY + 105, 278, 43,
+            '再玩一局', C.coral, '#FFF', null, 14, { variant: 'primary' });
+          this.button('game_return_home', 56, panelY + 157, 278, 40,
+            '返回小屋', '#F6EDE6', C.brown);
+        } else {
+          const hintSpace = result.taskHint ? 33 : 0;
+          const resultLineStep = Math.min(29,
+            (fieldH - 203 - hintSpace) / Math.max(1, result.lines.length - 1));
+          const panelHeight = 203 + hintSpace +
+            (result.lines.length - 1) * resultLineStep;
+          const panelY = fieldY + (fieldH - panelHeight) / 2;
+          const lastLineY = panelY + 72 +
+            (result.lines.length - 1) * resultLineStep;
+          const replayY = lastLineY + 22 + hintSpace;
+          this.fabricPanel(40, panelY, 310, panelHeight, 20, C.paper);
+          this.pet(state.active, 293, panelY + 36, .25,
+            this.time, 'happy');
+          this.text(result.title, 195, panelY + 45, 20, C.ink, 'center', 'bold');
+          result.lines.forEach((line, index) => {
+            const lineY = panelY + 72 + index * resultLineStep;
+            const rowHeight = Math.max(13, resultLineStep - 2);
+            this.box(69, lineY - rowHeight / 2, 252, rowHeight,
+              8, '#FFF3E3', FABRIC.edge, .6);
+            this.readableText(line, 195, lineY, 11,
+              index === 0 ? C.coral : C.brown, 'center');
+          });
+          if (result.taskHint) {
+            if (this.pressedId === 'game_task_reward') this.box(51,
+              replayY - 37, 288, 32, 12, 'rgba(255,249,240,.26)');
+            this.readableText(result.taskHint, 195, replayY - 28,
+              10, C.coral, 'center', 'bold');
+            this.buttons.push({ id: 'game_task_reward', x: 51,
+              y: replayY - 37, w: 288, h: 32 });
+          }
+          this.button('start_game', 56, replayY, 278, 43,
+            '再玩一局', C.coral, '#FFF', null, 14, { variant: 'primary' });
+          this.button('game_return_home', 56, replayY + 52, 278, 40,
+            '返回小屋', '#F6EDE6', C.brown);
         }
-        this.button('start_game', 56, field.bottom - 111, 278, 43,
-          '再玩一局', C.coral, '#FFF');
-        this.button('game_return_home', 56, field.bottom - 59, 278, 40,
-          '返回小屋', '#F6EDE6', C.brown);
       } else {
-        this.text('✦', 195, fieldY + fieldH * .43, 64, '#FFE1A0', 'center', 'bold');
-        this.text('接住每一颗小星星', 195, field.bottom - 137, 18, '#FFF9E7', 'center', 'bold');
-        this.readableText('左右滑动篮子，收集闪亮的好心情',
-          195, field.bottom - 109, 11, '#FFF1D3', 'center');
+        this.pet(state.active, 195, field.bottom - 150, .5,
+          this.time, 'happy');
+        this.drawUiSprite('basket', 207, field.bottom - 158, 78, 42);
+        const bubbleY = field.bottom - 295;
+        this.fabricPanel(48, bubbleY, 294, 46, 19, C.paper);
+        this.polygon([[173, bubbleY + 44], [189, bubbleY + 44],
+          [181, bubbleY + 57]], C.paper, FABRIC.edge, 1);
+        this.text('20 秒，左右移动篮子接星星', 195,
+          field.bottom - 272, 13, C.ink, 'center', 'bold');
         this.button('start_game', 93, fieldY + fieldH - 67, 204, 46,
-          '开始接星星  →', C.coral, '#FFF');
+          '开始接星星  →', C.coral, '#FFF', null, 14, { variant: 'primary' });
       }
     }
-    this.readableText('每局 20 秒 · 星星越多奖励越多', 21, field.bottom + 24, 10, C.muted);
-    this.readableText('玩法说明  ›', 368, field.bottom + 24, 10, C.coral, 'right');
-    this.buttons.push({ id: 'game_help', x: 281, y: field.bottom + 7, w: 91, h: 34 });
+    this.ctx.save();
+    this.ctx.shadowColor = 'rgba(14, 42, 73, .9)';
+    this.ctx.shadowBlur = 4;
+    this.readableText('20 秒一局 · 星星越多奖励越多', 25,
+      field.bottom + 24, 10, '#FFF', 'left', 'bold');
+    this.readableText('玩法说明  ›', 365, field.bottom + 24,
+      10, '#FFF', 'right', 'bold');
+    this.ctx.restore();
+    this.buttons.push({ id: 'game_help', x: 278, y: field.bottom + 8, w: 94, h: 32 });
     this.nav('game', state);
     if (ui.playing && ui.paused) {
       this.dim(); this.buttons = [];
       if (ui.quitConfirm) {
         const y = this.h / 2 - 128;
-        this.box(39, y, 312, 258, 24, C.paper);
+        this.fabricPanel(39, y, 312, 258, 24);
         this.button('quit_confirm_close', 300, y + 19, 34, 34,
-          '×', '#F8EEE8', C.brown, null, 18);
+          '×', '#F8EEE8', C.brown, null, 18, { variant: 'icon' });
         this.text('现在结束本局？', 195, y + 54, 21, C.ink, 'center', 'bold');
         this.readableText('结束后本局不结算奖励，', 195,
           y + 89, 12, C.brown, 'center');
         this.readableText('也不计入今日任务。', 195, y + 113, 12, C.brown, 'center');
         this.button('quit_confirm_continue', 74, y + 135, 242, 43,
-          '继续游戏', C.coral, '#FFF');
+          '继续游戏', C.coral, '#FFF', null, 14, { variant: 'primary' });
         this.button('quit_confirm_end', 74, y + 190, 242, 40,
           '确认结束', '#F6EDE6', C.brown);
       } else {
         const y = this.h / 2 - 128;
-        this.box(39, y, 312, 258, 24, C.paper);
+        this.fabricPanel(39, y, 312, 258, 24);
         this.text('暂停一下', 195, y + 50, 23, C.ink, 'center', 'bold');
         this.text('星星会等你回来', 195, y + 84, 13, C.muted, 'center');
-        this.button('resume_game', 74, y + 120, 242, 48, '继续游戏', C.coral, '#FFF');
+        this.button('resume_game', 74, y + 120, 242, 48, '继续游戏', C.coral,
+          '#FFF', null, 14, { variant: 'primary' });
         this.button('quit_game', 74, y + 184, 242, 42, '结束本局', '#F6EDE6', C.brown);
       }
     }
@@ -972,11 +1340,13 @@ export default class Scene {
     if (!view) return;
     if (view.phase === 'outro') {
       const y = this.h / 2 - 67;
-      this.box(GUIDE_CARD.x, y, GUIDE_CARD.width, 134, GUIDE_CARD.radius, GUIDE_COLOR.fill);
+      this.fabricPanel(GUIDE_CARD.x, y, GUIDE_CARD.width, 134,
+        GUIDE_CARD.radius, GUIDE_COLOR.fill);
       this.text(view.title, 195, y + 29, 17, GUIDE_COLOR.text, 'center', 'bold');
       this.readableText(view.text, 195, y + 59,
         12, GUIDE_COLOR.label, 'center');
-      this.button('guide_game', 48, y + 82, 140, 37, '去游戏', '#4E9EB0', '#FFF');
+      this.button('guide_game', 48, y + 82, 140, 37, '去游戏', '#4E9EB0',
+        '#FFF', null, 14, { variant: 'guide' });
       this.button('guide_finish', 202, y + 82, 140, 37, '知道了', '#F2FBFC', GUIDE_COLOR.label);
       return;
     }
@@ -985,7 +1355,7 @@ export default class Scene {
     const c = this.ctx;
     c.save(); c.shadowColor = 'rgba(53,111,128,.2)'; c.shadowBlur = 18;
     c.shadowOffsetY = 7;
-    this.box(GUIDE_CARD.x, y, GUIDE_CARD.width, GUIDE_CARD.height,
+    this.fabricPanel(GUIDE_CARD.x, y, GUIDE_CARD.width, GUIDE_CARD.height,
       GUIDE_CARD.radius, GUIDE_COLOR.fill);
     c.restore();
     this.readableText(view.label, GUIDE_CARD.x + 15, y + 21,
@@ -1007,16 +1377,26 @@ export default class Scene {
     const enabled = !!ui.debugEnabled;
     const height = enabled ? 338 : 274;
     const y = this.h / 2 - height / 2;
-    this.box(31, y, 328, height, 24, C.paper);
-    this.text('小屋设置', 58, y + 45, 21, C.ink, 'left', 'bold');
-    this.button('settings_close', 304, y + 22, 33, 33, '×', '#F8EEE8', C.brown, null, 20);
-    this.text('音效', 58, y + 110, 15, C.ink, 'left', 'bold');
-    this.box(281, y + 94, 53, 31, 16, state.soundEnabled ? '#A97958' : '#DED0BE');
+    this.fabricPanel(31, y, 328, height, 24);
+    this.text('小屋设置', 195, y + 45, 21, C.ink, 'center', 'bold');
+    this.roundIconButton('settings_close', 318, y + 39, 17, '×');
+    this.fabricPanel(51, y + 78, 288, 65, 16, '#FFF9F0', false);
+    this.polygon([[62, y + 105], [69, y + 105], [76, y + 99],
+      [76, y + 120], [69, y + 114], [62, y + 114]], C.brown);
+    this.curve(79, y + 102, 87, y + 109, 79, y + 117, C.brown, 2);
+    this.text('音效', 98, y + 110, 15, C.ink, 'left', 'bold');
+    this.box(281, y + 94, 53, 31, 16, this.pressedId === 'sound_toggle' ?
+      (state.soundEnabled ? '#2D8875' : '#BBBAB0') :
+      (state.soundEnabled ? '#55B79B' : '#D9D8D0'));
     this.circle(state.soundEnabled ? 318.5 : 296.5, y + 109.5, 12.5, '#FFFAF2');
-    this.line([[58, y + 143], [332, y + 143]], '#E5D1B8', 1);
     this.buttons.push({ id: 'sound_toggle', x: 51, y: y + 78, w: 288, h: 65 });
     if (enabled) {
-      this.button('debug_open', 51, y + 159, 288, 48, '调试模式  ›', '#F7E1D0', C.brown, C.line, 14);
+      this.fabricPanel(51, y + 159, 288, 52, 16,
+        this.pressedId === 'debug_open' ? PRESS.row : '#F5E9D9', false);
+      this.text('⚙', 74, y + 185, 21, C.muted, 'center');
+      this.text('调试模式', 98, y + 185, 15, C.ink, 'left', 'bold');
+      this.text('›', 316, y + 185, 23, C.brown, 'center');
+      this.buttons.push({ id: 'debug_open', x: 51, y: y + 159, w: 288, h: 52 });
       this.readableText('开发调试已开启', 58, y + 238, 11, C.coral, 'left', 'bold');
     }
     this.readableText('游戏进度会保存在当前设备。',
@@ -1055,10 +1435,11 @@ export default class Scene {
     const editor = ui.debugEditor;
     const draft = ui.debugDraft;
     this.dim(); this.buttons = [];
-    this.box(10, 12, 370, this.h - 24, 20, C.paper);
+    this.fabricPanel(10, 12, 370, this.h - 24, 20, C.paper, false);
     this.text('开发调试已开启', 28, 38, 11, C.coral, 'left', 'bold');
     this.text('调试模式', 28, 71, 21, C.ink, 'left', 'bold');
-    this.button('debug_close', 330, 42, 34, 34, '×', '#F8EEE8', C.brown, null, 20);
+    this.button('debug_close', 330, 42, 34, 34, '×', '#F8EEE8', C.brown,
+      null, 20, { variant: 'icon' });
     this.text(draft.petId ? `${draft.petName}  (${draft.petId})` : '当前没有陪伴萌宠',
       28, 99, 12, C.brown);
     this.text(`任务 ${draft.taskDate}  ·  成长 ${draft.growthDate || '—'}`,
@@ -1087,8 +1468,9 @@ export default class Scene {
           this.text(row.label, 35, y + 25, 11, C.muted);
         } else {
           const error = editor.errors[row.key];
-          this.box(29, y + 3, 331, 50, 11, error ? '#FFF0EA' : C.paper,
-            error ? C.coral : C.line);
+          this.box(29, y + 3, 331, 50, 11,
+            this.pressedId === `debug_field:${row.key}` ? PRESS.secondary :
+              error ? '#FFF0EA' : C.paper, error ? C.coral : C.line);
           this.text(row.label, 39, y + 21, 11, C.ink);
           const raw = draft.values[row.key];
           const value = row.claimed ? raw ? '已领奖' : '未领奖' :
@@ -1116,23 +1498,25 @@ export default class Scene {
     } else {
       this.box(20, this.h - 85, 350, 1, 1, C.line);
       this.button('debug_cancel', 24, this.h - 76, 150, 51, '取消', '#F6EDE6', C.brown);
-      this.button('debug_save', 184, this.h - 76, 182, 51, '保存修改', C.coral, '#FFF');
+      this.button('debug_save', 184, this.h - 76, 182, 51, '保存修改', C.coral,
+        '#FFF', null, 14, { variant: 'primary' });
     }
     if (editor.confirmDiscard) {
       this.dim(); this.buttons = [];
       const y = this.h / 2 - 96;
-      this.box(36, y, 318, 190, 20, C.paper);
+      this.fabricPanel(36, y, 318, 190, 20);
       this.text('放弃未保存的修改？', 195, y + 51, 17, C.ink, 'center', 'bold');
       this.text('已输入的调试数值不会保存。', 195, y + 85, 11, C.muted, 'center');
       this.button('debug_keep', 55, y + 119, 129, 46, '继续编辑', '#F6EDE6', C.brown);
-      this.button('debug_discard', 200, y + 119, 135, 46, '放弃修改', C.coral, '#FFF');
+      this.button('debug_discard', 200, y + 119, 135, 46, '放弃修改', DANGER,
+        '#FFF', null, 14, { variant: 'danger' });
     }
   }
 
   debugKeypad(ui) {
     const keyboard = ui.debugKeyboard;
     const y = this.h - 298;
-    this.box(20, y, 350, 280, 17, '#EBD8C4');
+    this.fabricPanel(20, y, 350, 280, 17, '#EBD8C4', false);
     this.text(`编辑 ${keyboard.label}：${ui.debugDraft.values[keyboard.key] || '空'}`,
       35, y + 23, 12, C.ink, 'left', 'bold');
     const keys = [
@@ -1187,8 +1571,7 @@ export default class Scene {
       this.setLayoutTransform();
       c.beginPath(); c.rect(ANIMATION_CLIP_LEFT, clipY, ANIMATION_CLIP_WIDTH, clipHeight);
       c.clip();
-      c.fillStyle = C.cream;
-      c.fillRect(ANIMATION_CLIP_LEFT, clipY, ANIMATION_CLIP_WIDTH, clipHeight);
+      this.background(ANIMATION_CLIP_LEFT, clipY, ANIMATION_CLIP_WIDTH, clipHeight);
       this.buttons = [];
       if (!state.active) this.welcome(state, ui);
       else if (ui.page === 'collection') this.collection(state);
@@ -1203,6 +1586,7 @@ export default class Scene {
 
   draw(state, ui, coinWaysOffer = null) {
     this.resize(); this.time = Date.now() / MILLISECONDS_PER_SECOND; this.buttons = [];
+    this.pressedId = ui.pressedId || null;
     const c = this.ctx;
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.fillStyle = C.cream; c.fillRect(0, 0, this.canvas.width, this.canvas.height);

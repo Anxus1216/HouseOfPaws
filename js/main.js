@@ -23,6 +23,7 @@ import { SPECIES, STORAGE_KEY, hydrate, adopt, care, daily, miniReward,
 const STAT_LABELS = { hunger: '饱腹', clean: '清洁', happy: '快乐', energy: '精力' };
 // Idle pet scenes need fewer redraws; 50 ms gives them a 20 FPS cap.
 const PET_ANIMATION_INTERVAL_MS = 50;
+const PRESS_FALLBACK_MS = 500;
 
 export default class Main {
   constructor(options = {}) {
@@ -42,11 +43,13 @@ export default class Main {
       showHomeAdvice: true, adviceExplanation: null,
       debugEnabled: options.debugEnabled === true || DEBUG_ENABLED,
       debugEditor: null, debugDraft: null, debugKeyboard: null,
-      expression: 'normal', expressionUntil: 0, action: '', statDelta: '' };
+      expression: 'normal', expressionUntil: 0, action: '', statDelta: '',
+      pressedId: null };
     this.lastFrame = Date.now();
     this.lastSave = Date.now();
     this.lastCareAt = 0;
     this.coinWayTouch = null;
+    this.pressExpiresAt = 0;
     this.sounds = {};
     this.needsDraw = true;
     if (this.saveReadFailed) this.notice('本机存档暂时不可用');
@@ -58,10 +61,12 @@ export default class Main {
     wx.onTouchStart(event => this.touch(event));
     wx.onTouchMove(event => this.move(event));
     if (wx.onTouchEnd) wx.onTouchEnd(event => this.touchEnd(event));
+    if (wx.onTouchCancel) wx.onTouchCancel(() => this.cancelTouch());
     try { if (wx.onWindowResize) wx.onWindowResize(() => this.syncViewport()); }
     catch (error) { logWarn('viewport.resize_listener_failed', { message: String(error) }); }
     if (wx.onHide) wx.onHide(() => {
       this.visible = false;
+      this.cancelTouch();
       if (this.ui.playing) this.ui.paused = true;
       logInfo('app.hidden', { gamePaused: this.ui.playing });
       this.save();
@@ -100,6 +105,8 @@ export default class Main {
       if (this.ui.playing) this.ui.paused = true;
       this.debugTouch = null;
       this.coinWayTouch = null;
+      this.ui.pressedId = null;
+      this.pressExpiresAt = 0;
     }
     const backing = canvasBacking(viewport);
     if (this.canvas.width !== backing.width || this.canvas.height !== backing.height) {
@@ -270,11 +277,13 @@ export default class Main {
     if (changed && previousId !== this.scene.hit(p.x, p.y)) return;
     this.needsDraw = true;
     settleTime(this.state, Date.now());
+    const id = this.scene.hit(p.x, p.y);
+    this.ui.pressedId = id;
+    this.pressExpiresAt = id ? Date.now() + PRESS_FALLBACK_MS : 0;
     if (this.ui.debugEditor) {
       this.debugTouch = { startY: p.y, lastY: p.y, moved: false };
       return;
     }
-    const id = this.scene.hit(p.x, p.y);
     if (this.ui.showGrowthHelp) {
       if (id === 'home_growth_close') this.ui.showGrowthHelp = false;
       return;
@@ -514,6 +523,14 @@ export default class Main {
   move(event) {
     if (Date.now() - this.lastViewportCheck >= 500 && this.syncViewport() &&
       this.viewportFieldChanged) return;
+    if (this.ui.pressedId) {
+      const p = this.coords(event);
+      if (!p || this.scene.hit(p.x, p.y) !== this.ui.pressedId) {
+        this.ui.pressedId = null;
+        this.pressExpiresAt = 0;
+        this.needsDraw = true;
+      }
+    }
     if (this.ui.debugEditor) {
       if (!this.debugTouch || this.ui.debugKeyboard || this.ui.debugEditor.confirmDiscard) return;
       const p = this.coords(event);
@@ -551,6 +568,11 @@ export default class Main {
   }
 
   touchEnd(event) {
+    if (this.ui.pressedId) {
+      this.ui.pressedId = null;
+      this.pressExpiresAt = 0;
+      this.needsDraw = true;
+    }
     if (this.syncViewport() && this.viewportFieldChanged) return;
     if (this.ui.coinWaysTarget) {
       const touch = this.coinWayTouch;
@@ -568,6 +590,14 @@ export default class Main {
     if (touch.moved) return;
     const p = this.coords(event);
     if (p) this.debugTap(this.scene.hit(p.x, p.y));
+  }
+
+  cancelTouch() {
+    this.coinWayTouch = null;
+    this.debugTouch = null;
+    this.ui.pressedId = null;
+    this.pressExpiresAt = 0;
+    this.needsDraw = true;
   }
 
   openDebugEditor() {
@@ -752,6 +782,11 @@ export default class Main {
     const dt = Math.max(0, (now - this.lastFrame) / 1000);
     this.lastFrame = now;
     settleTime(this.state, now);
+    if (this.ui.pressedId && now >= this.pressExpiresAt) {
+      this.ui.pressedId = null;
+      this.pressExpiresAt = 0;
+      this.needsDraw = true;
+    }
     if (this.ui.expressionUntil && now >= this.ui.expressionUntil) {
       this.ui.expression = 'normal'; this.ui.expressionUntil = 0;
       this.ui.action = ''; this.ui.speech = ''; this.ui.statDelta = '';

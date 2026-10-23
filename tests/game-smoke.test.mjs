@@ -297,7 +297,9 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   assert.equal(game.ui.gameOutcome.growthReason, 'no_stars');
   assert.equal(game.ui.gameOutcome.coins, 0);
   assert.equal(game.state.coins, zeroStarBalance);
-  assert.equal(game.state.pets.cat.happy, zeroStarHappy);
+  assert.ok(game.state.pets.cat.happy <= zeroStarHappy &&
+    game.state.pets.cat.happy > zeroStarHappy - 0.001,
+    'zero-star game adds no happiness beyond passive time decay');
   assert.equal(game.state.tasks.progress.game, 1, 'zero stars still complete the game task');
 
   game.state.pets.cat.hunger = 80;
@@ -398,7 +400,8 @@ test('blocked reward labels and explanation fit short and tall task screens', as
         button.id === 'claim_interact' || button.id === 'daily');
       assert.equal(blockedButtons.length, 2);
       assert.deepEqual(blockedButtons.map(button => [button.x, button.w]),
-        [[277, 80], [281, 77]], 'reward buttons keep their original sizes');
+        [[213, 144], [277, 80]],
+        'daily gift uses the top card and task rewards keep their row size');
       const blockedLabels = labels.filter(label => label.value === '装不下啦！');
       assert.equal(blockedLabels.length, 2);
       assert.ok(!labels.some(label => label.value === '今日任务奖励换日后失效' ||
@@ -496,7 +499,7 @@ test('essential captions remain readable on a narrow short screen', async () => 
   };
   const originalText = scene.text.bind(scene);
   scene.text = (value, x, y, size, ...rest) => {
-    labels.push({ value: String(value), x, y, size });
+    labels.push({ value: String(value), x, y, size, weight: rest[2] });
     originalText(value, x, y, size, ...rest);
   };
   const readable = value => {
@@ -516,8 +519,10 @@ test('essential captions remain readable on a narrow short screen', async () => 
 
   drawPage('collection');
   readable('一只喜欢晒太阳的小猫');
-  readable('未领养 · 需 80 爪爪币');
-  readable('还差 20 爪爪币');
+  const shortage = readable('还差 20爪爪币');
+  assert.equal(shortage.weight, 'bold');
+  assert.ok(!labels.some(item => item.value === '需 80 爪爪币'),
+    'a coin shortage has one concise amount on the adoption card');
   readable('获取爪爪币');
   ui.coinWaysTarget = 'rabbit';
   drawPage('collection');
@@ -535,11 +540,11 @@ test('essential captions remain readable on a narrow short screen', async () => 
 
   state.coins = 80;
   drawPage('collection');
-  const price = readable('未领养 · 需 80 爪爪币');
+  const price = readable('需 80 爪爪币');
   const adoptionButton = scene.buttons.find(button => button.id === 'adopt_rabbit');
   assert.ok(adoptionButton);
-  assert.ok((adoptionButton.y - price.y - price.size / 2) * scene.scale >= 3,
-    'affordable price stays above the adoption button on a short screen');
+  assert.ok(price.x < adoptionButton.x && adoptionButton.x + adoptionButton.w <= 370,
+    'affordable price and adoption action fit side by side on a short screen');
   ui.adoptionConfirmId = 'rabbit';
   drawPage('collection');
   readable('用 80 爪爪币领养糯米？');
@@ -550,14 +555,92 @@ test('essential captions remain readable on a narrow short screen', async () => 
   drawPage('tasks');
   readable(TASKS[0].label);
   readable('去完成 →');
-  const summary = labels.find(item => item.value.startsWith('今日目标'));
-  const slogan = readable('把小事变成好回忆  ✦');
-  assert.ok(summary && slogan.y - summary.y >= 20,
-    'task summary and decorative caption use separate lines on a short screen');
+  assert.equal(readable('今日完成').weight, 'bold');
+  readable(`0/${TASKS.length}`);
+  readable('每日礼物');
+  readable('+30 爪爪币');
+  readable('领取礼物');
+  assert.equal(labels.filter(item => item.value === '每日清单').length, 1,
+    'the page heading is the only daily checklist title');
+  assert.ok(!labels.some(item => item.value.startsWith('已完成')),
+    'the progress ring is the only task count summary');
 
   drawPage('game');
-  readable('每局 20 秒 · 星星越多奖励越多');
+  readable('20 秒一局 · 星星越多奖励越多');
   readable('玩法说明  ›');
+});
+
+test('owned pet status pills fit their text and omit the card level', async () => {
+  const { default: Scene } = await import('../js/scene.js');
+  const { initialState, adopt } = await import('../js/model.js');
+  for (const glyphWidth of [11, 17]) {
+    const context = new Proxy({
+      measureText: value => ({ width: Array.from(value).length * glyphWidth }),
+    }, { get: (target, key) => target[key] || (() => {}) });
+    const scene = new Scene(context, { width: 390, height: 844 });
+    const state = initialState();
+    adopt(state, 'cat');
+    state.coins = 80;
+    adopt(state, 'rabbit');
+    const boxes = [];
+    const labels = [];
+    const originalBox = scene.box.bind(scene);
+    const originalText = scene.text.bind(scene);
+    scene.box = (...args) => {
+      boxes.push({ x: args[0], w: args[2], fill: args[5] });
+      originalBox(...args);
+    };
+    scene.text = (value, x, y, size, color, align, weight) => {
+      labels.push({ value: String(value), x, align });
+      originalText(value, x, y, size, color, align, weight);
+    };
+    scene.draw(state, { page: 'collection' });
+    for (const [label, fill] of [
+      ['当前陪伴', '#D8F1E9'], ['已领养', '#F5E9D9'],
+    ]) {
+      const pill = boxes.find(box => box.fill === fill);
+      const text = labels.find(item => item.value === label);
+      assert.ok(pill && text);
+      assert.equal(pill.w, Array.from(label).length * glyphWidth + 24);
+      assert.equal(text.x, pill.x + pill.w / 2);
+      assert.equal(text.align, 'center');
+      assert.ok(pill.x + pill.w < 266, `${label} clears the action button`);
+    }
+    assert.ok(!labels.some(item => item.value.startsWith('Lv.')),
+      'collection cards leave level details to the pet page');
+  }
+});
+
+test('task progress and daily gift share equal cards above the task list', async () => {
+  const { default: Scene } = await import('../js/scene.js');
+  const { initialState, adopt } = await import('../js/model.js');
+  for (const height of [680, 844]) {
+    const scene = new Scene(new Proxy({}, { get: () => () => {} }),
+      { width: 390, height });
+    const state = initialState();
+    adopt(state, 'cat');
+    const panels = [];
+    const originalPanel = scene.fabricPanel.bind(scene);
+    scene.fabricPanel = (x, y, w, h, ...rest) => {
+      panels.push({ x, y, w, h });
+      originalPanel(x, y, w, h, ...rest);
+    };
+    scene.draw(state, { page: 'tasks', expressionUntil: 0 });
+    const top = scene.layout().sceneY;
+    const cards = panels.filter(panel => panel.y === top && panel.h === 104);
+    assert.deepEqual(cards, [
+      { x: 20, y: top, w: 170, h: 104 },
+      { x: 200, y: top, w: 170, h: 104 },
+    ], `${height}px: progress and gift cards have matching bounds`);
+    const dailyButton = scene.buttons.find(button => button.id === 'daily');
+    const firstTask = scene.buttons.find(button => button.id === 'task_go_care');
+    assert.ok(dailyButton && firstTask);
+    assert.ok(dailyButton.x >= 200 && dailyButton.x + dailyButton.w <= 370 &&
+      dailyButton.y >= top && dailyButton.y + dailyButton.h <= top + 104,
+    `${height}px: claim button fits inside the gift card`);
+    assert.ok(firstTask.y > top + 104,
+      `${height}px: task actions start below the summary cards`);
+  }
 });
 
 test('header controls stay below the native WeChat menu on different screens', async () => {
@@ -630,7 +713,7 @@ test('every page gives its heading more prominence than its description', async 
       const contentTop = page.page === 'home' ? scene.homeLayout().sceneY : scene.layout().sceneY;
       assert.ok(description.y + description.size / 2 < contentTop,
         `${page.page}: description clears content on ${height}px screen`);
-      const coin = boxes.find(box => box.fill === '#F1DFC5');
+      const coin = boxes.find(box => box.fill === '#FBEBD6');
       assert.ok(coin, `${page.page}: coin appears in the shared header`);
       const coinBounds = { x: coin.x, y: coin.y, w: coin.w, h: coin.h };
       if (!sharedCoins.has(height)) sharedCoins.set(height, coinBounds);
@@ -657,9 +740,9 @@ test('large home scene, action dock and colored arcs fit on short and tall scree
     scene.drawHomeGauge = (x, y, value, color) => arcs.push({ x, y, value, color });
     scene.draw(state, ui);
     const layout = scene.homeLayout();
-    const dock = boxes.find(box => box.x === layout.dockX && box.y === layout.dockY &&
-      box.w === layout.dockW);
-    assert.ok(dock, `${height}px: care actions sit in the scene dock`);
+    const dock = boxes.find(box => box.y === layout.dockY - 8 &&
+      box.x === layout.dockX && box.w === layout.dockW);
+    assert.ok(dock, `${height}px: care actions share a floating fabric dock`);
     assert.ok(layout.sceneH >= 340, `${height}px: pet scene remains large`);
     assert.ok(layout.sceneBottom < layout.gaugeY,
       `${height}px: scene clears the arc row`);
@@ -728,7 +811,7 @@ test('approved scene backgrounds load once, crop to cover, and request a redraw'
   let invalidations = 0;
   scene.onAssetReady = () => { invalidations++; };
   assert.equal(scene.sceneBackdrop('home_afternoon', 35, 150, 320, 160, 20, '#fff'), false);
-  assert.deepEqual(requested, ['assets/scenes/scene_home_afternoon.jpg']);
+  assert.deepEqual(requested, ['assets/scenes/scene_home_afternoon_felt.jpg']);
   image.onload();
   assert.equal(invalidations, 1);
   assert.equal(scene.sceneBackdrop('home_afternoon', 35, 150, 320, 160, 20, '#fff'), true);
@@ -749,11 +832,11 @@ test('all care and game scenes preload once and redraw when an image arrives', a
   scene.onAssetReady = () => { invalidations++; };
   scene.preloadSceneImages();
   assert.deepEqual(requested, [
-    'assets/scenes/scene_home_afternoon.jpg',
-    'assets/scenes/scene_wash_nook.jpg',
-    'assets/scenes/scene_play_garden.jpg',
-    'assets/scenes/scene_rest_evening.jpg',
-    'assets/scenes/scene_star_sky.jpg',
+    'assets/scenes/scene_home_afternoon_felt.jpg',
+    'assets/scenes/scene_wash_nook_felt.jpg',
+    'assets/scenes/scene_play_garden_felt.jpg',
+    'assets/scenes/scene_rest_evening_felt.jpg',
+    'assets/scenes/scene_star_sky_felt.jpg',
   ]);
   images[1].onload();
   assert.equal(invalidations, 1);
@@ -772,7 +855,7 @@ test('short game field keeps the moon near the top of the night scene', async ()
   scene.sceneBackdrop('star_sky', 36, 153, 318, 360, 21, '#174768', .12);
   image.onload();
   scene.sceneBackdrop('star_sky', 36, 153, 318, 360, 21, '#174768', .12);
-  assert.equal(image.path, 'assets/scenes/scene_star_sky.jpg');
+  assert.equal(image.path, 'assets/scenes/scene_star_sky_felt.jpg');
   assert.ok(crop[2] < 100, 'the source crop begins high enough to include the moon');
   assert.deepEqual(crop.slice(5), [36, 153, 318, 360]);
 });

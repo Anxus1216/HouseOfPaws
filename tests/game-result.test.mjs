@@ -59,10 +59,10 @@ test('game result and quit confirmation controls fit short and tall scenes', asy
     bonus: 5, leveled: true, happyDelta: 3.5, xp: 1,
     growthReason: 'earned', taskCompleted: true, taskDate: state.tasks.date };
   state.tasks.progress.game = 1;
-  for (const height of [680, 844]) {
+  for (const height of [680, 844, 1000]) {
     const scene = new Scene(context, { width: 390, height });
     const labels = [];
-    scene.text = (value, x, y) => labels.push({ value, x, y });
+    scene.text = (value, x, y, size, color) => labels.push({ value, x, y, color });
     scene.draw(state, { page: 'game', playing: false, gameOutcome: outcome });
     const field = scene.gameField();
     const replay = scene.buttons.find(button => button.id === 'start_game');
@@ -73,6 +73,37 @@ test('game result and quit confirmation controls fit short and tall scenes', asy
       home.y + home.h < field.bottom, `${height}px: result actions do not overlap`);
     const lastReward = labels.find(label => label.value === '成长 +1');
     assert.ok(lastReward?.y < task.y, `${height}px: rewards clear the task link`);
+    const taskHint = labels.find(label => label.value === '今日游戏任务已完成，去领取奖励');
+    assert.equal(taskHint?.color, '#C25343', `${height}px: task hint remains readable`);
+    labels.length = 0;
+    scene.draw(state, { page: 'game', playing: false, gameOutcome: {
+      kind: 'completed', stars: 0, coins: 0, requestedGameCoins: 0,
+      bonus: 0, leveled: false, happyDelta: 0, xp: 0,
+      growthReason: 'no_stars', taskCompleted: false,
+    } });
+    const finalLine = labels.find(label =>
+      label.value === '星星这次躲起来啦，再试一次吧');
+    const compactReplay = scene.buttons.find(button => button.id === 'start_game');
+    const compactHome = scene.buttons.find(button => button.id === 'game_return_home');
+    assert.ok(finalLine && compactReplay && compactHome);
+    assert.ok(compactReplay.y - finalLine.y <= 30 &&
+      compactReplay.y > finalLine.y &&
+      compactHome.y + compactHome.h < field.bottom,
+    `${height}px: result without a task hint stays compact inside the game field`);
+    labels.length = 0;
+    scene.draw(state, { page: 'game', playing: false,
+      gameOutcome: { kind: 'aborted' } });
+    const abortedLine = labels.find(label =>
+      label.value === '本局未结算奖励，也不计入今日任务');
+    const abortedReplay = scene.buttons.find(button => button.id === 'start_game');
+    const abortedHome = scene.buttons.find(button => button.id === 'game_return_home');
+    assert.ok(abortedLine && abortedReplay && abortedHome,
+      `${height}px: abandoned round has a message and both actions`);
+    assert.ok(abortedReplay.y - abortedLine.y <= 40 &&
+      abortedReplay.y > abortedLine.y,
+    `${height}px: abandoned round has no empty gulf before the actions`);
+    assert.ok(abortedHome.y + abortedHome.h < scene.layout().navY,
+      `${height}px: abandoned actions clear the navigation`);
     scene.draw(state, { page: 'game', playing: true, paused: true,
       quitConfirm: true, score: 1, remaining: 10, stars: [], basketX: 195 });
     const confirm = scene.buttons.find(button => button.id === 'quit_confirm_end');

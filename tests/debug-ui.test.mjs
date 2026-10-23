@@ -19,19 +19,21 @@ test('settings entry, numeric keypad, save and disabled mode work through touch 
   };
   const { default: Main } = await import('../js/main.js');
   const game = new Main({ debugEnabled: true });
+  const clientPoint = (x, y) => ({ clientX: game.scene.offsetX + x * game.scene.scale,
+    clientY: game.scene.offsetY + y * game.scene.scale });
   const tapId = id => {
     game.scene.draw(game.state, game.ui);
     const button = game.scene.buttons.find(item => item.id === id);
     assert.ok(button, `button ${id} is visible`);
-    const point = { clientX: button.x + button.w / 2, clientY: button.y + button.h / 2 };
+    const point = clientPoint(button.x + button.w / 2, button.y + button.h / 2);
     handlers.start({ touches: [point] });
     handlers.end({ changedTouches: [point] });
   };
   const swipeList = (fromY, toY) => {
     game.scene.draw(game.state, game.ui);
-    handlers.start({ touches: [{ clientX: 195, clientY: fromY }] });
-    handlers.move({ touches: [{ clientX: 195, clientY: toY }] });
-    handlers.end({ changedTouches: [{ clientX: 195, clientY: toY }] });
+    handlers.start({ touches: [clientPoint(195, fromY)] });
+    handlers.move({ touches: [clientPoint(195, toY)] });
+    handlers.end({ changedTouches: [clientPoint(195, toY)] });
   };
   tapId('settings');
   tapId('sound_toggle');
@@ -94,7 +96,8 @@ test('settings switch keeps one tappable row in both debug modes and screen heig
   for (const height of [680, 844]) {
     for (const debugEnabled of [false, true]) {
       for (const soundEnabled of [false, true]) {
-        const scene = new Scene({}, { width: 390, height });
+        const context = new Proxy({}, { get: () => () => {} });
+        const scene = new Scene(context, { width: 390, height });
         scene.h = height;
         scene.dim = () => {};
         const labels = [];
@@ -111,8 +114,9 @@ test('settings switch keeps one tappable row in both debug modes and screen heig
         assert.equal(switchHit.w, 288);
         assert.equal(switchHit.h, 65);
         assert.equal(scene.hit(track.x + track.w / 2, track.y + track.h / 2), 'sound_toggle');
-        assert.equal(track.fill, soundEnabled ? '#A97958' : '#DED0BE');
-        assert.equal(circles[0].x, soundEnabled ? 318.5 : 296.5);
+        assert.equal(track.fill, soundEnabled ? '#55B79B' : '#D9D8D0');
+        const thumb = circles.find(circle => circle.radius === 12.5);
+        assert.equal(thumb?.x, soundEnabled ? 318.5 : 296.5);
         assert.deepEqual(labels.filter(label => ['音效', '已开启', '已关闭', '开启', '关闭'].includes(label)), ['音效']);
         assert.equal(scene.buttons.some(button => button.id === 'debug_open'), debugEnabled);
         assert.equal(labels.includes('开发调试已开启'), debugEnabled);

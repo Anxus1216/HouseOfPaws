@@ -18,6 +18,9 @@ test('failed scene and pet images log once and keep Canvas fallback', async () =
     assert.equal(scene.sceneBackdrop('home_afternoon', 0, 0, 390, 300, 0, '#fff'), false);
     assert.equal(scene.petSprite('cat', 195, 300, 1, 0, 'normal', ''), false);
     images[0].onerror(new Error('missing background'));
+    assert.equal(images[0].path, 'assets/scenes/scene_home_afternoon.jpg',
+      'the original scene is tried when the felt variant fails');
+    images[0].onerror(new Error('missing original background'));
     images[1].onerror(new Error('missing sprite'));
     assert.equal(scene.sceneBackdrop('home_afternoon', 0, 0, 390, 300, 0, '#fff'), false);
     assert.equal(scene.petSprite('cat', 195, 300, 1, 0, 'normal', ''), false);
