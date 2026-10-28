@@ -8,8 +8,8 @@ export const HOME_METRICS = Object.freeze({
   feedbackTop: 8, feedbackHeight: 110, feedbackInset: 20,
   feedbackRightSpace: 88, feedbackMinWidth: 120,
   petWidthRatio: .76, petHeightRatio: .60, petInset: 12, petCareGap: 4,
-  identityRightSpace: 132, identityHeight: 64,
-  growthTop: 25, minHitSize: 44, walletWidth: 64, walletRightInset: 116,
+  identityRightSpace: 141, identityHeight: 64,
+  growthTop: 25, minHitSize: 44, walletWidth: 69, walletHeight: 32, walletRightInset: 121,
   settingsRightInset: 48
 });
 
@@ -49,7 +49,9 @@ export function computeHomeLayout(viewport, transform) {
       sceneY + (sceneHeight - petSize) / 2, petSize, petSize),
     identity: rect(left + HOME_METRICS.entryInset, top, width - HOME_METRICS.identityRightSpace, HOME_METRICS.identityHeight),
     growth: rect(left + HOME_METRICS.entryInset, top + HOME_METRICS.growthTop, width - HOME_METRICS.identityRightSpace, HOME_METRICS.minHitSize),
-    wallet: rect(left + width - HOME_METRICS.walletRightInset, top, HOME_METRICS.walletWidth, HOME_METRICS.minHitSize),
+    wallet: rect(left + width - HOME_METRICS.walletRightInset,
+      top + (HOME_METRICS.minHitSize - HOME_METRICS.walletHeight) / 2,
+      HOME_METRICS.walletWidth, HOME_METRICS.walletHeight),
     settings: rect(left + width - HOME_METRICS.settingsRightInset, top, HOME_METRICS.minHitSize, HOME_METRICS.minHitSize),
     nav: rect(left, navY, width, HOME_METRICS.navigationHeight),
     unit: 1 / scale,

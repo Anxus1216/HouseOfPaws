@@ -70,7 +70,6 @@ const HEADER_TYPE = Object.freeze({
   headingSize: 24, descriptionSize: 12, captionSize: 10,
   accentAboveHeading: 18, descriptionBelowHeading: 24, captionBelowHeading: 48,
 });
-const HEADER_COIN = Object.freeze({ x: 274, topOffset: 3, width: 69, height: 32 });
 // The welcome artwork extends below the home scene, with more space on taller screens.
 const WELCOME_MIN_EXTENSION = 70;
 const WELCOME_HEIGHT_EXTENSION_RATE = .25;
@@ -489,21 +488,9 @@ export default class Scene {
     const detailColor = dark ? '#FBE9CA' : C.brown;
     const compact = ['陪伴日记', '小伙伴们', '每日清单'].includes(heading) ||
       (heading === '星星接接乐' && !this.currentUi?.playing && !this.currentUi?.gameOutcome);
-    if (compact) { this.compactControls(state, this.homeGeometry()); return; }
+    if (compact) { this.compactControls(state, this.homeGeometry(), settings); return; }
     if (!compact) this.text('爪爪小屋', 20, 35, 18, headingColor, 'left', 'bold');
-    const controlsY = this.headerControlsY;
-    const coinY = controlsY + HEADER_COIN.topOffset;
-    this.fabricPanel(HEADER_COIN.x, coinY, HEADER_COIN.width, HEADER_COIN.height,
-      HEADER_COIN.height / 2, C.peach, false);
-    this.text('✦  ' + state.coins, HEADER_COIN.x + HEADER_COIN.width / 2,
-      coinY + HEADER_COIN.height / 2 + 1,
-      13, C.brown, 'center', 'bold');
-    if (settings) {
-      this.circle(365, controlsY + 19, 18,
-        this.pressedId === 'settings' ? PRESS.icon : '#F8EFE5');
-      this.text('⚙', 366, controlsY + 19, 20, C.brown, 'center');
-      this.buttons.push({ id: 'settings', x: 346, y: controlsY, w: 38, h: 38 });
-    }
+    this.compactControls(state, this.homeGeometry(), settings);
     const headingY = 83 + 16 * ratio;
     if (!compact) this.text(heading, 20, headingY, dark ? 27 : HEADER_TYPE.headingSize,
       headingColor, 'left', 'bold');
@@ -743,11 +730,13 @@ export default class Scene {
     this.compactControls(state, layout);
   }
 
-  compactControls(state, layout) {
+  compactControls(state, layout, settingsEnabled = true) {
     const unit = layout.unit;
     const wallet = layout.wallet;
-    this.fabricPanel(wallet.x, wallet.y, wallet.w, wallet.h, 20 * unit, C.peach, false);
-    this.readableText(`✦ ${state.coins}`, wallet.x + wallet.w / 2, wallet.y + wallet.h / 2, 13, C.brown, 'center', 'bold');
+    this.fabricPanel(wallet.x, wallet.y, wallet.w, wallet.h, wallet.h / 2, C.peach, false);
+    this.text(`✦  ${state.coins}`, wallet.x + wallet.w / 2, wallet.y + wallet.h / 2 + unit,
+      13 * unit, C.brown, 'center', 'bold');
+    if (!settingsEnabled) return;
     const settings = layout.settings;
     this.circle(settings.x + settings.w / 2, settings.y + settings.h / 2, 20 * unit,
       this.pressedId === 'settings' ? PRESS.icon : '#F8EFE5');
