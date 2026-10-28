@@ -4,8 +4,7 @@ export const HOME_METRICS = Object.freeze({
   navigationHeight: 64, headerHeight: 72, sceneNavigationGap: 12,
   entrySize: 52, careHeight: 60, carePanelHeight: 64, careEntryOffset: 6,
   careItemsOffset: 56, careItemsTop: 2, actionCount: 4,
-  statusWidth: 68, statusRightInset: 84, statusTop: 68,
-  statusMaxHeight: 216, statusCareGap: 76,
+  statusMaxHeight: 268, statusCareGap: 8,
   feedbackOffset: 116, feedbackHeight: 110, feedbackInset: 20,
   feedbackRightSpace: 88, feedbackMinWidth: 120,
   petInset: 24, petTop: 12, petMaxWidth: 190, petMinHeight: 80,
@@ -31,12 +30,14 @@ export function computeHomeLayout(viewport, transform) {
   const feedbackY = careY - HOME_METRICS.feedbackOffset;
   const petWidth = Math.min(HOME_METRICS.petMaxWidth, sceneWidth - HOME_METRICS.petStatusSpace);
   const petHeight = Math.max(HOME_METRICS.petMinHeight, feedbackY - sceneY - HOME_METRICS.petTop);
+  const statusX = left + width - HOME_METRICS.entryInset - HOME_METRICS.entrySize;
+  const statusY = sceneY + HOME_METRICS.topInset;
   return {
     scene: rect(left + HOME_METRICS.pageInset, sceneY, sceneWidth, sceneBottom - sceneY),
     careEntry: rect(left + HOME_METRICS.entryInset, careY + HOME_METRICS.careEntryOffset, HOME_METRICS.entrySize, HOME_METRICS.entrySize),
-    statusEntry: rect(left + width - HOME_METRICS.statusWidth, sceneY + HOME_METRICS.topInset, HOME_METRICS.entrySize, HOME_METRICS.entrySize),
-    statusPanel: rect(left + width - HOME_METRICS.statusRightInset, sceneY + HOME_METRICS.statusTop,
-      HOME_METRICS.statusWidth, Math.min(HOME_METRICS.statusMaxHeight, careY - sceneY - HOME_METRICS.statusCareGap)),
+    statusEntry: rect(statusX, statusY, HOME_METRICS.entrySize, HOME_METRICS.entrySize),
+    statusPanel: rect(statusX, statusY, HOME_METRICS.entrySize,
+      Math.min(HOME_METRICS.statusMaxHeight, careY - statusY - HOME_METRICS.statusCareGap)),
     carePanel: rect(left + HOME_METRICS.pageInset, careY, sceneWidth, HOME_METRICS.carePanelHeight),
     careItems: Array.from({ length: HOME_METRICS.actionCount }, (_, i) => rect(left + HOME_METRICS.entryInset + HOME_METRICS.entrySize + itemWidth * i,
       careY + HOME_METRICS.careItemsTop, itemWidth, HOME_METRICS.careHeight)),

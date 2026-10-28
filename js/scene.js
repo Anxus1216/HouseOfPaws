@@ -754,6 +754,25 @@ export default class Scene {
     this.buttons.push({ id: 'settings', ...settings });
   }
 
+  drawHomeGauge(x, centerY, value, color, unit) {
+    const c = this.ctx;
+    // Preserve the original semicircle, rounded ends and percentage presentation.
+    // The former four-column gauge now fits inside the 52px vertical drawer.
+    const radius = 18 * unit;
+    c.save();
+    c.lineWidth = 5 * unit;
+    c.lineCap = 'round';
+    c.beginPath(); c.arc(x, centerY, radius, Math.PI, Math.PI * 2);
+    c.strokeStyle = '#E8DDD1'; c.stroke();
+    if (value > 0) {
+      c.beginPath(); c.arc(x, centerY, radius, Math.PI,
+        Math.PI + Math.PI * clamp(value, 0, 100) / 100);
+      c.strokeStyle = color; c.stroke();
+    }
+    c.restore();
+    this.readableText(`${Math.round(value)}%`, x, centerY - 5 * unit, 13, C.ink, 'center', 'bold');
+  }
+
   home(state, ui) {
     const pet = state.pets[state.active];
     const layout = this.homeGeometry();
@@ -791,12 +810,13 @@ export default class Scene {
     };
     drawClipped(layout.statusPanel, status, true, () => {
       const r = layout.statusPanel;
-      this.fabricPanel(r.x, r.y, r.w, r.h, 15 * unit, C.paper, false);
+      this.fabricPanel(r.x, r.y, r.w, r.h, r.w / 2, C.paper, false);
+      const contentTop = r.y + layout.statusEntry.h;
+      const rowHeight = (r.h - layout.statusEntry.h) / HOME_STATS.length;
       HOME_STATS.forEach((stat, index) => {
-        const y = r.y + (index + .5) * r.h / 4;
-        this.readableText(stat.label, r.x + r.w / 2, y - 9 * unit, 12, C.muted,'center');
-        this.readableText(`${Math.round(pet[stat.field])}%`, r.x + r.w / 2, y + 7 * unit, 15, C.brown,'center', 'bold');
-        this.box(r.x + 10 * unit, y + 19 * unit, (r.w - 20 * unit) * pet[stat.field] / 100, 2 * unit, unit, stat.color);
+        const y = contentTop + index * rowHeight;
+        this.drawHomeGauge(r.x + r.w / 2, y + 25 * unit, pet[stat.field], stat.color, unit);
+        this.readableText(stat.label, r.x + r.w / 2, y + 36 * unit, 11, C.brown,'center', 'bold');
       });
     });
     drawClipped(layout.carePanel, care, false, () => {
