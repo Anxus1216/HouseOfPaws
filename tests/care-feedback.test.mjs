@@ -120,7 +120,7 @@ test('longest result, low status, failed save and a later rejected action stay w
     const bounds = view.homeGeometry().feedback;
     const panel = panels.find(item => item.x === bounds.x && item.w === bounds.w);
     assert.ok(panel);
-    assert.ok(panel.y >= bounds.y - 1e-9, 'feedback never grows into the fixed pet region');
+    assert.ok(panel.y >= bounds.y - 1e-9, 'feedback stays inside its upper scene carrier');
     assert.ok(panel.y + panel.h <= bounds.y + bounds.h + 1e-9);
     assert.ok(labels.includes('精力18% · 先休息'));
     assert.ok(labels.includes('照料已生效，尚未成功保存'));
@@ -137,7 +137,7 @@ test('longest result, low status, failed save and a later rejected action stay w
   }
 });
 
-test('mixed zero-bonus upgrade notes fit beside low status and save errors without covering the pet', () => {
+test('mixed zero-bonus upgrade notes fit above the centered pet face with low status and save errors', () => {
   const state = initialState();
   adopt(state, 'cat');
   state.guide.phase = 'skipped';
@@ -161,8 +161,8 @@ test('mixed zero-bonus upgrade notes fit beside low status and save errors witho
     const panel = panels.find(item => item.x === layout.feedback.x && item.w === layout.feedback.w);
     assert.ok(panel.y >= layout.feedback.y - 1e-9);
     assert.ok(panel.y + panel.h <= layout.carePanel.y);
-    assert.ok(layout.pet.y + layout.pet.h <= panel.y + 1e-9,
-      'fixed portrait area clears even the longest upgrade result');
+    assert.ok(panel.y + panel.h < layout.pet.y + layout.pet.h / 2,
+      'even the longest result ends above the centered face');
     assert.ok(labels.join('').includes('累计升级返币 +30'));
     assert.ok(labels.join('').includes('钱包已满，2次升级返币 0'));
     assert.ok(labels.includes('精力18% · 先休息'));

@@ -826,9 +826,6 @@ export default class Scene {
     if (care >= .999 && drawers?.care.targetOpen) this.homeActions(state, layout);
     this.drawerButton('home_care_toggle', 'care-drawer-felt', layout.careEntry, !!drawers?.care.targetOpen);
     this.drawerButton('home_status_toggle', 'state-drawer-felt', layout.statusEntry, !!drawers?.status.targetOpen, true);
-    if (display.speech && !ui.careFeedback) {
-      this.readableText(display.speech, scene.x + 10 * unit, scene.y + 15 * unit, 11, C.brown);
-    }
     this.homeFeedback(state, ui, layout, display, guide, now);
 
   }
@@ -873,9 +870,12 @@ export default class Scene {
     const feedback = ui.careFeedback?.petId === pet.id && ui.careFeedback.until > now ? ui.careFeedback : null;
     const reason = ui.careReason?.until > now ? ui.careReason.displayText || ui.careReason.text : '';
     const showAdvice = summary || (ui.showHomeAdvice !== false && (!guide || guide.phase === 'outro'));
-    if (!feedback && !reason && !showAdvice && !display.statDelta && !ui.persistenceWarning) return;
+    if (!feedback && !reason && !showAdvice && !display.statDelta && !display.speech && !ui.persistenceWarning) return;
     const lines = [];
     const contentWidth = bounds.w - 16 * unit;
+    // Speech shares the upper carrier so advice cannot paint over a pet's response.
+    if (display.speech && !feedback && !reason)
+      lines.push(...this.wrapText(display.speech, contentWidth));
     if (reason) {
       lines.push(...this.wrapText(reason, contentWidth));
     } else if (feedback) {
@@ -894,11 +894,11 @@ export default class Scene {
     if (summary) lines.push(summary);
     if (ui.persistenceWarning) lines.push(feedback ? '照料已生效，尚未成功保存' : ui.persistenceWarning);
     const height = Math.max(44, lines.length * 14 + 12) * unit;
-    const top = bounds.y + bounds.h - height;
+    const top = bounds.y;
     this.fabricPanel(bounds.x, top, bounds.w, height, 12 * unit, C.paper, false);
     lines.forEach((line, index) => this.readableText(line, bounds.x + 8 * unit,
       top + (13 + 14 * index) * unit, 11, C.brown));
-    if (feedback || reason || display.statDelta) {
+    if (feedback || reason || display.statDelta || !showAdvice) {
       this.buttons.push({ id: 'home_panel', x: bounds.x, y: top, w: bounds.w, h: height });
     } else {
       this.buttons.push({ id: 'home_advice', x: bounds.x, y: top,

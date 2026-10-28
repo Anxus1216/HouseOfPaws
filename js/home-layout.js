@@ -5,10 +5,9 @@ export const HOME_METRICS = Object.freeze({
   entrySize: 52, careHeight: 60, carePanelHeight: 64, careEntryOffset: 6,
   careItemsOffset: 56, careItemsTop: 2, actionCount: 4,
   statusMaxHeight: 268, statusCareGap: 8,
-  feedbackOffset: 116, feedbackHeight: 110, feedbackInset: 20,
+  feedbackTop: 8, feedbackHeight: 110, feedbackInset: 20,
   feedbackRightSpace: 88, feedbackMinWidth: 120,
-  petInset: 24, petTop: 12, petMaxWidth: 190, petMinHeight: 80,
-  petStatusSpace: 76, identityRightSpace: 132, identityHeight: 64,
+  petMaxSize: 190, petInset: 12, identityRightSpace: 132, identityHeight: 64,
   growthTop: 25, minHitSize: 44, walletWidth: 64, walletRightInset: 116,
   settingsRightInset: 48
 });
@@ -27,9 +26,9 @@ export function computeHomeLayout(viewport, transform) {
   const sceneWidth = width - HOME_METRICS.pageInset * 2;
   const careY = sceneBottom - HOME_METRICS.carePanelHeight;
   const itemWidth = (sceneWidth - HOME_METRICS.careItemsOffset) / HOME_METRICS.actionCount;
-  const feedbackY = careY - HOME_METRICS.feedbackOffset;
-  const petWidth = Math.min(HOME_METRICS.petMaxWidth, sceneWidth - HOME_METRICS.petStatusSpace);
-  const petHeight = Math.max(HOME_METRICS.petMinHeight, feedbackY - sceneY - HOME_METRICS.petTop);
+  const sceneHeight = sceneBottom - sceneY;
+  const petSize = Math.min(HOME_METRICS.petMaxSize, sceneWidth - HOME_METRICS.petInset * 2,
+    sceneHeight - HOME_METRICS.petInset * 2);
   const statusX = left + width - HOME_METRICS.entryInset - HOME_METRICS.entrySize;
   const statusY = sceneY + HOME_METRICS.topInset;
   return {
@@ -41,9 +40,11 @@ export function computeHomeLayout(viewport, transform) {
     carePanel: rect(left + HOME_METRICS.pageInset, careY, sceneWidth, HOME_METRICS.carePanelHeight),
     careItems: Array.from({ length: HOME_METRICS.actionCount }, (_, i) => rect(left + HOME_METRICS.entryInset + HOME_METRICS.entrySize + itemWidth * i,
       careY + HOME_METRICS.careItemsTop, itemWidth, HOME_METRICS.careHeight)),
-    feedback: rect(left + HOME_METRICS.feedbackInset, feedbackY,
+    feedback: rect(left + HOME_METRICS.feedbackInset, sceneY + HOME_METRICS.feedbackTop,
       Math.max(HOME_METRICS.feedbackMinWidth, sceneWidth - HOME_METRICS.feedbackRightSpace), HOME_METRICS.feedbackHeight),
-    pet: rect(left + HOME_METRICS.petInset, sceneY + HOME_METRICS.petTop, petWidth, petHeight),
+    // Keep the portrait centered in the cultivation scene, independent of drawers and feedback.
+    pet: rect(left + HOME_METRICS.pageInset + (sceneWidth - petSize) / 2,
+      sceneY + (sceneHeight - petSize) / 2, petSize, petSize),
     identity: rect(left + HOME_METRICS.entryInset, top, width - HOME_METRICS.identityRightSpace, HOME_METRICS.identityHeight),
     growth: rect(left + HOME_METRICS.entryInset, top + HOME_METRICS.growthTop, width - HOME_METRICS.identityRightSpace, HOME_METRICS.minHitSize),
     wallet: rect(left + width - HOME_METRICS.walletRightInset, top, HOME_METRICS.walletWidth, HOME_METRICS.minHitSize),
