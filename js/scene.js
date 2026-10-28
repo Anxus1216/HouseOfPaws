@@ -914,34 +914,39 @@ export default class Scene {
   nav(active, state) {
     const geometry = this.homeGeometry();
     const { x: navX, y: navY, w: navW, h: navH } = geometry.nav;
-    const y = 0;
-    const navScale = navW / 390;
-    this.ctx.save();
-    this.ctx.translate(navX, navY);
-    this.ctx.scale(navScale, navH / NAV_HEIGHT);
-    this.box(0, -1, 390, NAV_HEIGHT + 1, 0, C.paper);
-    this.linenOverlay(0, y, 390, NAV_HEIGHT, 0, .55);
-    this.line([[0, y], [390, y]], FABRIC.edge, 1);
+    const unit = geometry.unit;
+    const columnWidth = navW / 4;
+    this.box(navX, navY - unit, navW, navH + unit, 0, C.paper);
+    this.linenOverlay(navX, navY, navW, navH, 0, .55);
+    this.line([[navX, navY], [navX + navW, navY]], FABRIC.edge, unit);
     [['home', '小屋'], ['collection', '萌宠'],
       ['tasks', '任务'], ['game', '游戏']].forEach((item, i) => {
-      const x = i * 97.5;
+      const x = navX + i * columnWidth;
+      const centerX = x + columnWidth / 2;
       const selected = active === item[0];
-      if (selected) this.box(x + 8, y + 5, 81, NAV_HEIGHT - 10, 14, '#EDF2E4');
+      if (selected) this.box(x + 8 * unit, navY + 5 * unit,
+        columnWidth - 16 * unit, navH - 10 * unit, 14 * unit, '#EDF2E4');
       if (this.pressedId === 'nav_' + item[0])
-        this.box(x + 8, y + 5, 81, NAV_HEIGHT - 10, 14, PRESS.nav);
-      this.navIcon(item[0], x + 48.75, y + 27,
+        this.box(x + 8 * unit, navY + 5 * unit,
+          columnWidth - 16 * unit, navH - 10 * unit, 14 * unit, PRESS.nav);
+      // Distribute columns across the width without stretching their contents.
+      this.ctx.save();
+      this.ctx.translate(centerX, navY + 27 * unit);
+      this.ctx.scale(unit, unit);
+      this.navIcon(item[0], 0, 0,
         selected ? '#418F81' : C.brown, selected);
-      this.readableText(item[1], x + 48.75, y + 54, 11,
+      this.ctx.restore();
+      this.text(item[1], centerX, navY + 54 * unit, 11 * unit,
         selected ? '#418F81' : C.muted, 'center', selected ? 'bold' : 'normal');
-      this.buttons.push({ id: 'nav_' + item[0], x: navX + x * navScale, y: navY + 3 * navH / NAV_HEIGHT,
-        w: 97.5 * navScale, h: (NAV_HEIGHT - 7) * navH / NAV_HEIGHT });
+      this.buttons.push({ id: 'nav_' + item[0], x, y: navY + 3 * unit,
+        w: columnWidth, h: navH - 7 * unit });
     });
     const pending = pendingDailyTaskCount(state);
     if (pending) {
-      this.box(247, y + 3, 55, 18, 9, C.coral);
-      this.readableText(`待领 ${pending}`, 274.5, y + 12, 9, '#FFF', 'center', 'bold');
+      const badgeX = navX + columnWidth * 2.5 + 31 * unit;
+      this.box(badgeX - 27.5 * unit, navY + 3 * unit, 55 * unit, 18 * unit, 9 * unit, C.coral);
+      this.text(`待领 ${pending}`, badgeX, navY + 12 * unit, 11 * unit, '#FFF', 'center', 'bold');
     }
-    this.ctx.restore();
   }
 
   navIcon(id, x, y, color, selected) {
