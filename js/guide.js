@@ -93,6 +93,44 @@ export function guideInteractionResponse(state) {
   return `${name}记住你啦`;
 }
 
+// The caller records this only after a real drawer changes from closed to open.
+// It teaches a control, not a care action, so the main facts never advance here.
+export function recordDrawerGuideEvent(state, key) {
+  const guide = state?.guide;
+  const hints = guide?.uiHints;
+  if (!['interact', 'care'].includes(guide?.phase) || hints?.version !== 1) return false;
+  const field = key === 'care' ? 'careOpened' : key === 'status' ? 'statusOpened' : null;
+  if (!field || typeof hints[field] !== 'boolean' || hints[field]) return false;
+  hints[field] = true;
+  return true;
+}
+
+// Keep the original guideView contract; this optional layer is used by the UI.
+export function drawerTutorialView(state, ui, now = Date.now()) {
+  const main = guideView(state, ui.page, now);
+  if (!main || ui.page !== 'home' || main.phase !== 'care' ||
+      state.guide.uiHints?.version !== 1 || !availableCare(state).length) return main;
+  if (ui.guideHoldUntil > now || ui.careFeedback?.until > now ||
+      (ui.statDelta && ui.expressionUntil > now)) return null;
+  const hints = state.guide.uiHints;
+  if (!hints.careOpened) return {
+    phase: 'care', step: 2, substep: 1, label: '1 / 2 · 打开照料篮',
+    title: '打开照料篮',
+    text: '照料篮里有喂食、清洁、玩耍和休息。点下方按钮，四种照料会向右展开。',
+    targetIds: ['home_care_toggle'],
+  };
+  if (!hints.statusOpened) {
+    const name = state.pets[state.active]?.name || '小伙伴';
+    return {
+      phase: 'care', step: 2, substep: 2, label: '2 / 2 · 看看状态卡',
+      title: '看看状态卡',
+      text: `小猫卡片里是${name}的状态。点击后向下展开四项数值，再次点击，就会向上收回。`,
+      targetIds: ['home_status_toggle'],
+    };
+  }
+  return main;
+}
+
 export function guideView(state, page, now = Date.now()) {
   const guide = state?.guide;
   if (!guide || (!ACTIVE_PHASES.has(guide.phase) && guide.phase !== 'outro')) return null;

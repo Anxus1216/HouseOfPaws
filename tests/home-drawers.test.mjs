@@ -30,7 +30,7 @@ test('window-sized targets survive short-screen letterboxing and density', () =>
       assert.ok(transform.offsetX + r.x * scale >= 0);
       assert.ok(transform.offsetX + (r.x + r.w) * scale <= width);
     }
-    assert.ok(l.pet.y + l.pet.h <= l.feedback.y);
+    assert.ok(l.pet.y + l.pet.h <= l.feedback.y + 1e-9);
     assert.ok(l.carePanel.y + l.carePanel.h<l.nav.y);
     assert.ok(l.statusPanel.y + l.statusPanel.h<l.carePanel.y);
   }

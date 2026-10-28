@@ -6,7 +6,7 @@ export const HOME_METRICS = Object.freeze({
   careItemsOffset: 56, careItemsTop: 2, actionCount: 4,
   statusWidth: 68, statusRightInset: 84, statusTop: 68,
   statusMaxHeight: 216, statusCareGap: 76,
-  feedbackOffset: 62, feedbackHeight: 56, feedbackInset: 20,
+  feedbackOffset: 102, feedbackHeight: 96, feedbackInset: 20,
   feedbackRightSpace: 88, feedbackMinWidth: 120,
   petInset: 24, petTop: 12, petMaxWidth: 190, petMinHeight: 80,
   petStatusSpace: 76, identityRightSpace: 132, identityHeight: 64,

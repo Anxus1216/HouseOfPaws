@@ -8,10 +8,11 @@ import { careShortReason } from './care-reasons.js';
 import { homeAdvice, homeAdviceText } from './home-advice.js';
 import { growthSummary, GROWTH_HELP_LINES } from './growth-info.js';
 import { gameOutcomeView } from './game-result.js';
-import { guideView } from './guide.js';
+import { drawerTutorialView } from './guide.js';
 import { PET_FIELDS } from './debug-editor.js';
 import { readViewport } from './viewport.js';
 import { logInfo, logWarn, logError } from './logger.js';
+import { careFeedbackTokens, lowStateSummary } from './care-feedback.js';
 import { computeHomeLayout } from './home-layout.js';
 import { drawerProgress } from './home-drawers.js';
 import { LINEN_ASSET, UI_SPRITES } from './ui-assets.js';
@@ -731,7 +732,7 @@ export default class Scene {
   compactHeader(state, pet, layout) {
     const unit = layout.unit;
     const identity = layout.identity;
-    this.readableText(pet.name, identity.x, identity.y + 13 * unit, 17, C.ink, 'left', 'bold');
+    this.readableText(this.fitText(pet.name, identity.w, 17), identity.x, identity.y + 13 * unit, 17, C.ink, 'left', 'bold');
     this.readableText(`Lv.${pet.level}`, identity.x, identity.y + 32 * unit, 11, C.muted);
     const growth = growthSummary(pet);
     this.readableText(growth.progress, identity.x, identity.y + 49 * unit, 11, C.brown);
@@ -804,22 +805,89 @@ export default class Scene {
     if (care >= .999 && drawers?.care.targetOpen) this.homeActions(state, layout);
     this.drawerButton('home_care_toggle', 'care-drawer-felt', layout.careEntry, !!drawers?.care.targetOpen);
     this.drawerButton('home_status_toggle', 'state-drawer-felt', layout.statusEntry, !!drawers?.status.targetOpen, true);
-    const feedback = layout.feedback;
+    if (display.speech && !ui.careFeedback) {
+      this.readableText(display.speech, scene.x + 10 * unit, scene.y + 15 * unit, 11, C.brown);
+    }
+    this.homeFeedback(state, ui, layout, display, guide, now);
+    this.nav('home', state);
+  }
+
+  textWidth(value, size = 11) {
+    const fontSize = Math.max(size, 11 / this.scale);
+    this.ctx.save();
+    this.ctx.font = `normal ${fontSize}px sans-serif`;
+    const measured = this.ctx.measureText?.(value)?.width;
+    this.ctx.restore();
+    return Number.isFinite(measured) ? measured : Array.from(value).reduce((width, glyph) =>
+      width + fontSize * (/[^\x00-\xff]/.test(glyph) ? 1 : .6), 0);
+  }
+
+  fitText(value, width, size) {
+    let result = String(value);
+    if (this.textWidth(result, size) <= width) return result;
+    while (result && this.textWidth(result + '…', size) > width) result = Array.from(result).slice(0, -1).join('');
+    return result + '…';
+  }
+
+  wrapText(value, width, size = 11) {
+    const lines = [];
+    let current = '';
+    for (const glyph of Array.from(String(value))) {
+      if (current && this.textWidth(current + glyph, size) > width) {
+        lines.push(current);
+        current = '';
+      }
+      current += glyph;
+    }
+    if (current) lines.push(current);
+    return lines;
+  }
+
+  homeFeedback(state, ui, layout, display, guide, now) {
+    const unit = layout.unit;
+    const bounds = layout.feedback;
+    const pet = state.pets[state.active];
     const advice = homeAdvice(state);
-    if (display.speech) this.readableText(display.speech, scene.x + 10 * unit, scene.y + 15 * unit, 11, C.brown);
-    if (display.statDelta || (ui.showHomeAdvice !== false && (!guide || guide.phase === 'outro'))) {
-      this.fabricPanel(feedback.x, feedback.y, feedback.w, feedback.h, 12 * unit, C.paper, false);
-      const lines = display.statDelta ? display.statDelta.split('|') :
-        [ui.adviceExplanation?.until > now ? ui.adviceExplanation.compactDetail : homeAdviceText(advice, true)];
-      lines.slice(0, 3).forEach((line, i) => this.readableText(line, feedback.x + 8 * unit, feedback.y + (13 + 16 * i) * unit, 11, C.brown));
-      this.buttons.push({ id: display.statDelta ? 'home_panel':'home_advice', ...feedback,
-        w: display.statDelta ? feedback.w : feedback.w - 44 * unit });
-      if (!display.statDelta) {
-        this.text('×', feedback.x + feedback.w - 22 * unit, feedback.y + feedback.h / 2, 17, C.muted,'center');
-        this.buttons.push({id: 'home_advice_close', x: feedback.x + feedback.w - 44 * unit, y: feedback.y, w: 44 * unit, h: feedback.h});
+    const summary = lowStateSummary(pet, advice);
+    const feedback = ui.careFeedback?.petId === pet.id && ui.careFeedback.until > now ? ui.careFeedback : null;
+    const reason = ui.careReason?.until > now ? ui.careReason.displayText || ui.careReason.text : '';
+    const showAdvice = summary || (ui.showHomeAdvice !== false && (!guide || guide.phase === 'outro'));
+    if (!feedback && !reason && !showAdvice && !display.statDelta && !ui.persistenceWarning) return;
+    const lines = [];
+    const contentWidth = bounds.w - 16 * unit;
+    if (reason) {
+      lines.push(...this.wrapText(reason, contentWidth));
+    } else if (feedback) {
+      const tokens = careFeedbackTokens(feedback);
+      const changes = (feedback.count > 1 ? `${feedback.count}次 · ` : '') + tokens.changes.join(' · ');
+      lines.push(...this.wrapText(changes, contentWidth));
+      const rewards = tokens.rewards.join(' · ');
+      lines.push(...this.wrapText(rewards, contentWidth));
+    } else if (display.statDelta) {
+      lines.push(...display.statDelta.split('|').flatMap(line => this.wrapText(line, contentWidth)));
+    } else if (!summary && showAdvice) {
+      const explaining = ui.adviceExplanation?.until > now;
+      const text = explaining ? ui.adviceExplanation.compactDetail : homeAdviceText(advice, true);
+      lines.push(...this.wrapText(text, contentWidth - 44 * unit));
+    }
+    if (summary) lines.push(summary);
+    if (ui.persistenceWarning) lines.push(feedback ? '照料已生效，尚未成功保存' : ui.persistenceWarning);
+    const height = Math.max(44, lines.length * 14 + 12) * unit;
+    const top = bounds.y + bounds.h - height;
+    this.fabricPanel(bounds.x, top, bounds.w, height, 12 * unit, C.paper, false);
+    lines.forEach((line, index) => this.readableText(line, bounds.x + 8 * unit,
+      top + (13 + 14 * index) * unit, 11, C.brown));
+    if (feedback || reason || display.statDelta) {
+      this.buttons.push({ id: 'home_panel', x: bounds.x, y: top, w: bounds.w, h: height });
+    } else {
+      this.buttons.push({ id: 'home_advice', x: bounds.x, y: top,
+        w: bounds.w - (summary ? 0 : 44 * unit), h: height });
+      if (!summary) {
+        this.text('×', bounds.x + bounds.w - 22 * unit, top + height / 2, 17, C.muted, 'center');
+        this.buttons.push({ id: 'home_advice_close', x: bounds.x + bounds.w - 44 * unit,
+          y: top, w: 44 * unit, h: height });
       }
     }
-    this.nav('home', state);
   }
 
   nav(active, state) {
@@ -1301,7 +1369,12 @@ export default class Scene {
         ui.rewardHelp || ui.debugEditor || ui.playing ||
         (ui.page === 'game' && ui.gameOutcome) ||
         ui.quitConfirm) return null;
-    return guideView(state, ui.page, now);
+    const view = drawerTutorialView(state, ui, now);
+    if (view?.phase === 'care' && ui.page === 'home' && !view.substep &&
+        !ui.homeDrawers?.care.targetOpen && view.targetIds.some(id => HOME_ACTIONS.some(action => action.id === id))) {
+      return { ...view, targetIds: ['home_care_toggle'] };
+    }
+    return view;
   }
 
   guideFocus(targetIds, page, now) {
@@ -1312,9 +1385,6 @@ export default class Scene {
     let right = Math.max(...targets.map(button => button.x + button.w));
     const bottom = Math.min(this.h - 5,
       Math.max(...targets.map(button => button.y + button.h)));
-    if (page === 'home' && targetIds.includes('pet_tap')) {
-      y = Math.max(y, this.homeLayout().sceneY + GUIDE_CARD.height + 5);
-    }
     x -= 3; y -= 3; right += 3;
     const width = right - x, height = bottom - y + 3;
     if (width <= 0 || height <= 0) return;
@@ -1349,6 +1419,10 @@ export default class Scene {
       this.button('guide_finish', 202, y + 82, 140, 37, '知道了', '#F2FBFC', GUIDE_COLOR.label);
       return;
     }
+    if (ui.page === 'home') {
+      this.homeGuide(view, ui, now);
+      return;
+    }
     this.guideFocus(view.targetIds, ui.page, now);
     const y = ui.page === 'home' ? this.homeLayout().sceneY : this.layout().sceneY;
     const c = this.ctx;
@@ -1369,6 +1443,26 @@ export default class Scene {
       13, GUIDE_COLOR.text, 'left', 'bold');
     this.button('guide_skip', GUIDE_CARD.x + GUIDE_CARD.width - 111, y + 14,
       100, 30, '跳过引导', GUIDE_COLOR.button, GUIDE_COLOR.label, '#ACD1D9', 11);
+  }
+
+  homeGuide(view, ui, now) {
+    const layout = this.homeGeometry();
+    const unit = layout.unit;
+    const width = ui.homeDrawers?.status.targetOpen ? layout.feedback.w : layout.scene.w - 16 * unit;
+    const x = layout.scene.x + 8 * unit;
+    const lines = this.wrapText(view.text, width - 24 * unit, 13);
+    const height = (78 + lines.length * 17) * unit;
+    const y = layout.carePanel.y - height - 6 * unit;
+    this.guideFocus(view.targetIds, 'home', now);
+    this.fabricPanel(x, y, width, height, 16 * unit, GUIDE_COLOR.fill);
+    this.buttons.push({ id: 'home_panel', x, y, w: width, h: height });
+    this.readableText(view.label, x + 12 * unit, y + 17 * unit, 11,
+      GUIDE_COLOR.label, 'left', 'bold');
+    lines.forEach((line, index) => this.readableText(line, x + 12 * unit,
+      y + (37 + index * 17) * unit, 13, GUIDE_COLOR.text, 'left', 'bold'));
+    this.button('guide_skip', x + width - 112 * unit, y + height - 46 * unit,
+      100 * unit, 44 * unit, '跳过引导', GUIDE_COLOR.button, GUIDE_COLOR.label,
+      '#ACD1D9', 11);
   }
 
   settings(state, ui) {
@@ -1533,6 +1627,7 @@ export default class Scene {
 
   toast(ui) {
     if (!ui.toast || Date.now() > ui.toastUntil) return;
+    if (ui.page === 'home' && (ui.careFeedback || ui.careReason)) return;
     const w = Math.min(320, Math.max(215, ui.toast.length * 13 + 30));
     this.box((390 - w) / 2, this.h - 248, w, 42, 21, C.ink);
     this.text(ui.toast, 195, this.h - 227, 12, '#FFF', 'center');

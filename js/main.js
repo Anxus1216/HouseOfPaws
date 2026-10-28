@@ -1,3 +1,4 @@
+import { mergeCareFeedback } from './care-feedback.js';
 import './render.js';
 import { createHomeDrawers, setDrawerOpen, finishHomeDrawers, homeDrawersAnimating, drawerProgress } from './home-drawers.js';
 import Scene from './scene.js';
@@ -14,7 +15,7 @@ import { homeAdvice, homeAdviceDetail } from './home-advice.js';
 import { careGrowthFeedback } from './growth-info.js';
 import { completedGameOutcome } from './game-result.js';
 import { rewardSpaceHelp } from './reward-presentation.js';
-import { guideInteractionResponse, reconcileGuide, recordGuideEvent } from './guide.js';
+import { guideInteractionResponse, reconcileGuide, recordGuideEvent, recordDrawerGuideEvent } from './guide.js';
 import { logInfo, logWarn, logError } from './logger.js';
 import { SPECIES, STORAGE_KEY, hydrate, adopt, care, daily, miniReward,
   ensureTasks, recordTask, claimTask, taskClaimState, giftClaimState, dayKey, settleTime,
@@ -34,7 +35,7 @@ export default class Main {
     this.viewport = GameGlobal.viewport;
     this.scene.setViewport(this.viewport);
     this.state = this.load();
-    this.ui = { homeDrawers: createHomeDrawers(), page: 'home', speech: '', toast: '', toastUntil: 0,
+    this.ui = { careFeedback: null, careReason: null, persistenceWarning: null, homeDrawers: createHomeDrawers(), page: 'home', speech: '', toast: '', toastUntil: 0,
       playing: false, paused: false, score: 0, remaining: 20, stars: [], basketX: 195,
       gameOutcome: null, quitConfirm: false,
       guideHoldUntil: 0, showSettings: false,
@@ -160,14 +161,21 @@ export default class Main {
 
   save() {
     if (this.saveDisabled) {
-      this.notice('本机存档暂时不可用');
-      return;
+      this.ui.persistenceWarning = '本机存档暂时不可用';
+      this.notice(this.ui.persistenceWarning);
+      return false;
     }
     settleTime(this.state, Date.now());
-    try { wx.setStorageSync(STORAGE_KEY, this.state); }
+    try {
+      wx.setStorageSync(STORAGE_KEY, this.state);
+      this.ui.persistenceWarning = null;
+      return true;
+    }
     catch (error) {
       logError('save.write_failed', { message: String(error) });
-      this.notice('本机存档暂时不可用');
+      this.ui.persistenceWarning = '本机存档暂时不可用';
+      this.notice(this.ui.persistenceWarning);
+      return false;
     }
   }
 
@@ -226,7 +234,19 @@ export default class Main {
   }
 
   draw() {
+    const feedback = this.ui.careFeedback;
+    if (feedback && (feedback.petId !== this.state.active || this.ui.page !== 'home' || feedback.until <= Date.now())) {
+      this.ui.careFeedback = null;
+    }
     this.scene.draw(this.state, this.ui, this.currentCoinWays());
+  }
+
+  clearHomeFeedback() {
+    this.ui.careFeedback = null;
+    this.ui.careReason = null;
+    this.ui.statDelta = '';
+    this.ui.speech = '';
+    this.ui.expressionUntil = 0;
   }
 
   chooseCoinWay(id) {
@@ -236,6 +256,7 @@ export default class Main {
     const way = offer.ways.find(item => 'coin_way_' + item.id === id && item.page);
     if (!way) return;
     this.closeCoinWays();
+    this.clearHomeFeedback();
     this.ui.page = way.page;
   }
 
@@ -369,6 +390,7 @@ export default class Main {
     if (!id) return;
     if (id.startsWith('nav_')) {
       if (this.ui.playing && id !== 'nav_game') this.ui.paused = true;
+      if (this.ui.page !== id.slice(4)) this.clearHomeFeedback();
       this.ui.page = id.slice(4);
       this.ui.adviceExplanation = null;
       return;
@@ -376,6 +398,7 @@ export default class Main {
     if (id === 'home_care_toggle' || id === 'home_status_toggle') {
       const key = id === 'home_care_toggle' ? 'care' : 'status';
       setDrawerOpen(this.ui.homeDrawers, key, !this.ui.homeDrawers[key].targetOpen);
+      if (this.ui.homeDrawers[key].targetOpen && recordDrawerGuideEvent(this.state, key)) this.save();
       this.cancelTouch();
       this.needsDraw = true;
       return;
@@ -440,6 +463,7 @@ export default class Main {
       const speciesId = id.slice(7);
       if (!selectPet(this.state, speciesId)) return;
       logInfo('pet.selected', { species: this.state.active });
+      this.clearHomeFeedback();
       this.ui.page = 'home'; this.ui.speech = ''; this.ui.expressionUntil = 0;
       this.ui.action = ''; this.ui.statDelta = '';
       this.ui.adviceExplanation = null;
@@ -506,8 +530,13 @@ export default class Main {
         logInfo(result.error ? 'care.rejected' : 'care.completed',
           { action: id, pet: this.state.active, reason: result.error || undefined,
             xp: result.xp ?? 0, leveled: !!result.leveled });
-        this.notice(result.block ? careFullReason(result.block, id, pet.name) :
-          result.leveled ? `${pet.name}升到 Lv.${pet.level} 啦` : result.label);
+        if (result.error) {
+          const text = result.block ? careFullReason(result.block, id, pet.name) : result.error;
+          const displayText = result.block ?
+            careFullReason(result.block, id, Array.from(pet.name).length > 8 ? '它' : pet.name) : text;
+          this.ui.careReason = { text, displayText, until: now + 2200 };
+          this.notice(text);
+        }
         if (!result.error) {
           this.lastCareAt = now;
           this.ui.speech = ACTION_SPEECH[id];
@@ -526,6 +555,17 @@ export default class Main {
           if (result.leveled) lines.push(result.bonus ?
             `升级返币 +${result.bonus} 爪爪币` : '钱包已满，升级返币 0');
           this.ui.statDelta = lines.join('|');
+          this.ui.careReason = null;
+          this.ui.toast = '';
+          this.ui.toastUntil = 0;
+          const actualChanges = Object.fromEntries(Object.keys(effect.changes).map(field =>
+            [field, Math.round(pet[field]) - Math.round(before[field])]));
+          this.ui.careFeedback = mergeCareFeedback(this.ui.careFeedback, {
+            petId: this.state.active, action: id, label: result.label, now,
+            changes: actualChanges, growth: result.xp, cost: effect.cost, bonus: result.bonus || 0,
+            level: pet.level, leveled: result.leveled, duration: FEEDBACK_MS[id],
+            growthReason: result.xp ? null : careGrowthFeedback(pet, 0, now),
+          });
           recordTask(this.state, 'care');
           if (recordGuideEvent(this.state, 'care_success')) this.ui.guideHoldUntil = this.ui.expressionUntil;
           this.playSound(result.leveled ? 'level' : 'care'); this.save();
@@ -804,6 +844,14 @@ export default class Main {
     if (this.ui.expressionUntil && now >= this.ui.expressionUntil) {
       this.ui.expression = 'normal'; this.ui.expressionUntil = 0;
       this.ui.action = ''; this.ui.speech = ''; this.ui.statDelta = '';
+      this.needsDraw = true;
+    }
+    if (this.ui.careFeedback && now >= this.ui.careFeedback.until) {
+      this.ui.careFeedback = null;
+      this.needsDraw = true;
+    }
+    if (this.ui.careReason && now >= this.ui.careReason.until) {
+      this.ui.careReason = null;
       this.needsDraw = true;
     }
     if (this.ui.toast && now >= this.ui.toastUntil) {

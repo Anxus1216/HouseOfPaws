@@ -25,14 +25,25 @@ const GUIDE_PHASES = new Set(['await_adoption', 'interact', 'care', 'claim', 'ou
 const GUIDE_BRANCHES = new Set([null, 'care', 'game', 'pending_reward']);
 const GUIDE_FACTS = ['interacted', 'cared', 'naturalGame', 'claimedTask'];
 const freshGuide = phase => ({ version: 1, phase,
-  facts: { interacted: false, cared: false, naturalGame: false, claimedTask: false }, branch: null });
+  facts: { interacted: false, cared: false, naturalGame: false, claimedTask: false }, branch: null,
+  uiHints: phase === 'await_adoption' ?
+    { version: 1, careOpened: false, statusOpened: false } : null });
+
+function hydrateGuideHints(raw) {
+  // Missing hints identify older saves; do not force them through new teaching.
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.version !== 1 ||
+      typeof raw.careOpened !== 'boolean' || typeof raw.statusOpened !== 'boolean') return null;
+  return { version: 1, careOpened: raw.careOpened, statusOpened: raw.statusOpened };
+}
+
 function hydrateGuide(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.version !== 1 ||
       !GUIDE_PHASES.has(raw.phase) || !GUIDE_BRANCHES.has(raw.branch) ||
       !raw.facts || typeof raw.facts !== 'object' || Array.isArray(raw.facts) ||
       !GUIDE_FACTS.every(key => typeof raw.facts[key] === 'boolean')) return freshGuide('disabled');
   return { version: 1, phase: raw.phase,
-    facts: Object.fromEntries(GUIDE_FACTS.map(key => [key, raw.facts[key]])), branch: raw.branch };
+    facts: Object.fromEntries(GUIDE_FACTS.map(key => [key, raw.facts[key]])), branch: raw.branch,
+    uiHints: hydrateGuideHints(raw.uiHints) };
 }
 export const MAX_COINS = 999999;
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));

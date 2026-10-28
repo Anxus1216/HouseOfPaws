@@ -15,12 +15,12 @@ export function homeAdvice(state) {
     if (!need) continue;
     const block = careBlock(state, need.action);
     if (block?.kind === 'energy_low') {
-      return { kind: 'care', action: 'rest', name: pet.name, prerequisite: true };
+      return { kind: 'care', action: 'rest', field: need.field, name: pet.name, prerequisite: true };
     }
     if (block?.kind === 'insufficient_coins') {
-      return { kind: 'coins', action: need.action, name: pet.name, missing: block.missing };
+      return { kind: 'coins', action: need.action, field: need.field, name: pet.name, missing: block.missing };
     }
-    return { kind: 'care', action: need.action, name: pet.name };
+    return { kind: 'care', action: need.action, field: need.field, name: pet.name };
   }
   return { kind: 'pet', name: pet.name };
 }

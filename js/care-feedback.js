@@ -1,0 +1,48 @@
+const STAT_NAMES = Object.freeze({ hunger: '饱腹', clean: '清洁', happy: '心情', energy: '精力' });
+
+export function mergeCareFeedback(previous, entry) {
+  const continuing = previous && previous.petId === entry.petId && previous.until > entry.now;
+  const base = continuing ? previous : { count: 0, changes: {}, growth: 0, cost: 0, bonus: 0 };
+  const changes = { ...base.changes };
+  for (const [field, delta] of Object.entries(entry.changes)) {
+    changes[field] = (changes[field] || 0) + delta;
+  }
+  return {
+    petId: entry.petId,
+    action: entry.action,
+    label: entry.label,
+    count: base.count + 1,
+    changes,
+    growth: base.growth + entry.growth,
+    cost: base.cost + entry.cost,
+    bonus: base.bonus + entry.bonus,
+    level: entry.level,
+    leveled: !!entry.leveled || (continuing && previous.leveled),
+    growthReason: entry.growthReason || null,
+    until: entry.now + entry.duration,
+  };
+}
+
+export function careFeedbackTokens(feedback) {
+  const changes = Object.entries(STAT_NAMES).filter(([field]) => feedback.changes[field])
+    .map(([field, name]) => {
+      const delta = feedback.changes[field];
+      return `${name} ${delta > 0 ? '+' : ''}${delta}`;
+    });
+  const rewards = [];
+  if (feedback.growth) rewards.push(`成长 +${feedback.growth}`);
+  if (feedback.cost) rewards.push(`爪爪币 -${feedback.cost}`);
+  if (feedback.bonus) rewards.push(`升级返币 +${feedback.bonus}`);
+  if (feedback.growthReason && !feedback.growth) rewards.push(feedback.growthReason);
+  if (feedback.leveled) rewards.push(`升到 Lv.${feedback.level} 啦`);
+  return { changes, rewards };
+}
+
+export function lowStateSummary(pet, advice) {
+  if (!pet || !advice || advice.kind === 'pet') return '';
+  const field = advice.field;
+  if (!field) return '';
+  const actionLabel = { rest: '先休息', feed: '先喂食', wash: '先清洁', play: '陪它玩耍' }[advice.action];
+  const next = advice.kind === 'coins' ? `还差${advice.missing}爪爪币` : actionLabel;
+  return `${STAT_NAMES[field]}${Math.round(pet[field])}% · ${next}`;
+}
