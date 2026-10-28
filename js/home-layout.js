@@ -7,7 +7,8 @@ export const HOME_METRICS = Object.freeze({
   statusCareGap: 8,
   feedbackTop: 8, feedbackHeight: 110, feedbackInset: 20,
   feedbackRightSpace: 88, feedbackMinWidth: 120,
-  petMaxSize: 190, petInset: 12, identityRightSpace: 132, identityHeight: 64,
+  petWidthRatio: .76, petHeightRatio: .60, petInset: 12, petCareGap: 4,
+  identityRightSpace: 132, identityHeight: 64,
   growthTop: 25, minHitSize: 44, walletWidth: 64, walletRightInset: 116,
   settingsRightInset: 48
 });
@@ -27,8 +28,9 @@ export function computeHomeLayout(viewport, transform) {
   const careY = sceneBottom - HOME_METRICS.carePanelHeight;
   const itemWidth = (sceneWidth - HOME_METRICS.careItemsOffset) / HOME_METRICS.actionCount;
   const sceneHeight = sceneBottom - sceneY;
-  const petSize = Math.min(HOME_METRICS.petMaxSize, sceneWidth - HOME_METRICS.petInset * 2,
-    sceneHeight - HOME_METRICS.petInset * 2);
+  const petSize = Math.min(sceneWidth * HOME_METRICS.petWidthRatio,
+    sceneHeight * HOME_METRICS.petHeightRatio, sceneWidth - HOME_METRICS.petInset * 2,
+    sceneHeight - 2 * (HOME_METRICS.carePanelHeight + HOME_METRICS.petCareGap));
   const statusX = left + width - HOME_METRICS.entryInset - HOME_METRICS.entrySize;
   const statusY = sceneY + HOME_METRICS.topInset;
   return {

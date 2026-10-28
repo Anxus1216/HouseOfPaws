@@ -12,6 +12,7 @@ import { gameOutcomeView } from './game-result.js';
 import { drawerTutorialView } from './guide.js';
 import { PET_FIELDS } from './debug-editor.js';
 import { readViewport } from './viewport.js';
+import { gameIdleLayout } from './game-idle-layout.js';
 import { logInfo, logWarn, logError } from './logger.js';
 import { careFeedbackTokens, lowStateSummary } from './care-feedback.js';
 import { computeHomeLayout } from './home-layout.js';
@@ -1335,16 +1336,20 @@ export default class Scene {
             '返回小屋', '#F6EDE6', C.brown);
         }
       } else {
-        this.pet(state.active, 195, field.bottom - 150, .5,
-          this.time, 'happy');
-        this.drawUiSprite('basket', 207, field.bottom - 158, 78, 42);
-        const bubbleY = field.bottom - 295;
-        this.fabricPanel(48, bubbleY, 294, 46, 19, C.paper);
-        this.polygon([[173, bubbleY + 44], [189, bubbleY + 44],
-          [181, bubbleY + 57]], C.paper, FABRIC.edge, 1);
+        const idle = gameIdleLayout(field);
+        const portrait = idle.pet;
+        const size = portrait.w / 300;
+        this.pet(state.active, portrait.x + portrait.w / 2, portrait.y + 170 * size,
+          size, this.time, 'happy');
+        this.drawUiSprite('basket', idle.basket.x, idle.basket.y, idle.basket.w, idle.basket.h);
+        const bubble = idle.bubble;
+        this.fabricPanel(bubble.x, bubble.y, bubble.w, bubble.h, 19, C.paper);
+        const bubbleCenter = bubble.x + bubble.w / 2;
+        this.polygon([[bubbleCenter - 22, bubble.y + bubble.h - 2], [bubbleCenter - 6, bubble.y + bubble.h - 2],
+          [bubbleCenter - 14, bubble.y + bubble.h + 11]], C.paper, FABRIC.edge, 1);
         this.text('20 秒，左右移动篮子接星星', 195,
-          field.bottom - 272, 13, C.ink, 'center', 'bold');
-        this.button('start_game', 93, fieldY + fieldH - 67, 204, 46,
+          bubble.y + bubble.h / 2, 13, C.ink, 'center', 'bold');
+        this.button('start_game', idle.start.x, idle.start.y, idle.start.w, idle.start.h,
           '开始接星星  →', C.coral, '#FFF', null, 14, { variant: 'primary' });
       }
     }
