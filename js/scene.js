@@ -896,8 +896,9 @@ export default class Scene {
     const height = Math.max(44, lines.length * 14 + 12) * unit;
     const top = bounds.y;
     this.fabricPanel(bounds.x, top, bounds.w, height, 12 * unit, C.paper, false);
+    const firstLineY = top + (height - (lines.length - 1) * 14 * unit) / 2;
     lines.forEach((line, index) => this.readableText(line, bounds.x + 8 * unit,
-      top + (13 + 14 * index) * unit, 11, C.brown));
+      firstLineY + 14 * index * unit, 11, C.brown));
     if (feedback || reason || display.statDelta || !showAdvice) {
       this.buttons.push({ id: 'home_panel', x: bounds.x, y: top, w: bounds.w, h: height });
     } else {
