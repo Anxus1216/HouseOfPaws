@@ -1709,7 +1709,8 @@ export default class Scene {
     const navigation = this.homeGeometry().nav;
     c.save();
     c.beginPath();
-    c.rect(navigation.x, 0, navigation.w, navigation.y);
+    // Welcome has no bottom navigation; its adoption button uses that space.
+    c.rect(navigation.x, 0, navigation.w, state.active ? navigation.y : this.h);
     c.clip();
     c.globalAlpha = (Number.isFinite(c.globalAlpha) ? c.globalAlpha : 1) * frame.alpha;
     this.drawContent(state, renderUi);
