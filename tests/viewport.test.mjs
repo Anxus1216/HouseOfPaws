@@ -65,11 +65,11 @@ test('density changes redraw at physical resolution without moving touch targets
   assert.equal(canvas.height, 1688);
   adopt(game.state, 'cat');
   game.ui.guideStep = 0;
-  game.scene.draw(game.state, game.ui);
+  game.draw();
   assert.deepEqual(transforms.at(-1), [game.scene.scale * 2, 0, 0,
     game.scene.scale * 2, game.scene.offsetX * 2, game.scene.offsetY * 2]);
   const tap = id => {
-    game.scene.draw(game.state, game.ui);
+    game.draw();
     const button = game.scene.buttons.find(item => item.id === id);
     assert.ok(button, `${id} is visible`);
     handlers.touch({ touches: [{
@@ -84,7 +84,7 @@ test('density changes redraw at physical resolution without moving touch targets
   game.ui.playing = true;
   game.ui.paused = false;
   game.ui.score = 4;
-  game.scene.draw(game.state, game.ui);
+  game.draw();
   metrics = { ...metrics, pixelRatio: 3 };
   handlers.resize();
   assert.equal(canvas.width, 1170);
@@ -204,7 +204,7 @@ test('runtime window and safe-area changes redraw before accepting touch', async
   GameGlobal.viewport = readViewport(wx, canvas);
   const game = new Main();
   const tap = id => {
-    game.scene.draw(game.state, game.ui);
+    game.draw();
     const b = game.scene.buttons.find(button => button.id === id);
     assert.ok(b, `${id} is visible`);
     const point = { clientX: game.scene.offsetX +
@@ -223,7 +223,7 @@ test('runtime window and safe-area changes redraw before accepting touch', async
   menuBottom = 83;
   game.syncViewport();
   assert.equal(game.ui.paused, false, 'capsule movement alone does not pause the game');
-  game.scene.draw(game.state, game.ui);
+  game.draw();
   const oldField = game.scene.gameField();
   game.ui.stars = [{ x: 195, y: oldField.y + oldField.h / 2, speed: 210 }];
   metrics = { windowWidth: 320, windowHeight: 568, screenHeight: 568,
@@ -248,7 +248,7 @@ test('runtime window and safe-area changes redraw before accepting touch', async
   assert.equal(game.scene.offsetY, 26);
   game.ui.page = 'home';
   game.ui.playing = false;
-  game.scene.draw(game.state, game.ui);
+  game.draw();
   const nav = game.scene.buttons.find(button => button.id === 'nav_home');
   assert.ok(game.scene.offsetY + (nav.y + nav.h) * game.scene.scale <= 528);
   tap('nav_tasks');
@@ -303,7 +303,7 @@ test('runtime window and safe-area changes redraw before accepting touch', async
   // A capsule-only refresh during touchend must still finish a debug-editor tap.
   game.ui.debugEnabled = true;
   game.openDebugEditor();
-  game.scene.draw(game.state, game.ui);
+  game.draw();
   const fieldButton = game.scene.buttons.find(button => button.id === 'debug_field:hunger');
   assert.ok(fieldButton);
   const fieldPoint = { clientX: game.scene.offsetX +

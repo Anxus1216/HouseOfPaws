@@ -1,3 +1,4 @@
+import { transitionFrame } from './page-transition.js';
 import { SPECIES, TASKS, taskClaimState, giftClaimState, taskSnapshot,
   pendingDailyTaskCount, petCardState, DAILY_GIFT_COINS, careBlock } from './model.js';
 import { rewardButtonLabel } from './reward-presentation.js';
@@ -185,7 +186,7 @@ export default class Scene {
     c.save();
     try {
       if (radius) { this.roundedPath(x, y, w, h, radius); c.clip(); }
-      c.globalAlpha = opacity;
+      c.globalAlpha = (Number.isFinite(c.globalAlpha) ? c.globalAlpha : 1) * opacity;
       const sourceX = x / 390 * entry.image.width;
       const sourceY = y / this.h * entry.image.height;
       const sourceW = w / 390 * entry.image.width;
@@ -757,7 +758,7 @@ export default class Scene {
     const pet = state.pets[state.active];
     const layout = this.homeGeometry();
     const unit = layout.unit;
-    const display = petDisplay(pet, ui);
+    const display = petDisplay(pet, ui, ui.frameNow ?? Date.now());
     const guide = this.visibleGuide(state, ui);
     this.compactHeader(state, pet, layout);
     // Existing main teaching hides growth details while the pet is its target.
@@ -773,7 +774,7 @@ export default class Scene {
         portrait.x + portrait.w / 2 - 142 * size, portrait.y + 190 * size, 284 * size, 97 * size);
     this.buttons.push({ id: 'pet_tap', ...portrait });
     const drawers = ui.homeDrawers;
-    const now = Date.now();
+    const now = ui.frameNow ?? Date.now();
     const care = drawerProgress(drawers?.care, now);
     const status = drawerProgress(drawers?.status, now);
     const drawClipped = (r, progress, vertical, draw) => {
@@ -809,7 +810,7 @@ export default class Scene {
       this.readableText(display.speech, scene.x + 10 * unit, scene.y + 15 * unit, 11, C.brown);
     }
     this.homeFeedback(state, ui, layout, display, guide, now);
-    this.nav('home', state);
+
   }
 
   textWidth(value, size = 11) {
@@ -1023,7 +1024,7 @@ export default class Scene {
         selected || !owned ? null : C.line, 10,
         { disabled: selected, variant: owned ? 'secondary' : 'primary' });
     });
-    this.nav('collection', state);
+
   }
 
   adoptionConfirm(state, speciesId) {
@@ -1223,7 +1224,7 @@ export default class Scene {
         c.strokeStyle = FABRIC.stitch; c.lineWidth = 1; c.stroke(); c.restore();
       }
     });
-    this.nav('tasks', state);
+
   }
 
   gameField() {
@@ -1330,7 +1331,10 @@ export default class Scene {
       10, '#FFF', 'right', 'bold');
     this.ctx.restore();
     this.buttons.push({ id: 'game_help', x: 278, y: field.bottom + 8, w: 94, h: 32 });
-    this.nav('game', state);
+
+  }
+
+  gameOverlay(state, ui) {
     if (ui.playing && ui.paused) {
       this.dim(); this.buttons = [];
       if (ui.quitConfirm) {
@@ -1679,6 +1683,14 @@ export default class Scene {
     }
   }
 
+  drawContent(state, ui) {
+    if (!state.active) this.welcome(state, ui);
+    else if (ui.page === 'collection') this.collection(state);
+    else if (ui.page === 'tasks') this.tasks(state);
+    else if (ui.page === 'game') this.game(state, ui);
+    else this.home(state, ui);
+  }
+
   draw(state, ui, coinWaysOffer = null) {
     this.currentUi = ui;
     this.resize(); this.time = Date.now() / MILLISECONDS_PER_SECOND; this.buttons = [];
@@ -1689,13 +1701,27 @@ export default class Scene {
     this.setLayoutTransform();
     c.clearRect(0, 0, 390, this.h);
     this.background();
-    if (!state.active) this.welcome(state, ui);
-    else if (ui.page === 'collection') this.collection(state);
-    else if (ui.page === 'tasks') this.tasks(state);
-    else if (ui.page === 'game') this.game(state, ui);
-    else this.home(state, ui);
-    this.toast(ui);
-    this.guide(state, ui);
+    const frame = ui.pageTransition ? transitionFrame(ui.pageTransition) : {
+      displayPage: ui.page, alpha: 1, active: false,
+    };
+    const renderUi = { ...ui, page: frame.displayPage };
+    this.currentUi = renderUi;
+    const navigation = this.homeGeometry().nav;
+    c.save();
+    c.beginPath();
+    c.rect(navigation.x, 0, navigation.w, navigation.y);
+    c.clip();
+    c.globalAlpha = (Number.isFinite(c.globalAlpha) ? c.globalAlpha : 1) * frame.alpha;
+    this.drawContent(state, renderUi);
+    c.restore();
+    if (frame.active) this.buttons = [];
+    if (state.active) this.nav(ui.page, state);
+    this.currentUi = ui;
+    if (!frame.active) {
+      if (ui.page === 'game') this.gameOverlay(state, ui);
+      this.toast(ui);
+      this.guide(state, ui, ui.frameNow ?? Date.now());
+    }
     if (ui.adoptionConfirmId) this.adoptionConfirm(state, ui.adoptionConfirmId);
     if (coinWaysOffer) this.coinWaysModal(coinWaysOffer, ui.coinWaysScroll);
     if (ui.showGrowthHelp) this.growthHelp();

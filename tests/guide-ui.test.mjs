@@ -18,9 +18,12 @@ test('guide follows real taps while the home hint replaces growth details', asyn
     onTouchEnd: callback => { handlers.end = callback; },
   };
   const { default: Main } = await import('../js/main.js');
-  const game = new Main();
+  let transitionNow = Date.now();
+  const game = new Main({ now: () => transitionNow });
   const visible = id => game.scene.buttons.find(button => button.id === id);
   const tap = id => {
+    transitionNow = Math.max(transitionNow + 200, Date.now());
+    game.loop();
     game.draw();
     const button = visible(id);
     assert.ok(button, `${id} is visible`);

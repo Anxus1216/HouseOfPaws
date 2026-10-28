@@ -27,11 +27,14 @@ test('game starts, adopts, navigates and renders each screen', async () => {
     createInnerAudioContext: () => ({ src: '', volume: 1, stop() {}, play() { played.push(this.src); } }),
   };
   const { default: Main } = await import('../js/main.js');
-  const game = new Main();
+  let transitionNow = Date.now();
+  const game = new Main({ now: () => transitionNow });
   const tap = (x, y) => handlers.touch({ touches: [{ clientX: x, clientY: y }] });
   const clientPoint = (x, y) => ({ clientX: game.scene.offsetX + x * game.scene.scale,
     clientY: game.scene.offsetY + y * game.scene.scale });
   const tapId = id => {
+    transitionNow = Math.max(transitionNow + 200, Date.now());
+    game.loop();
     if (['feed','wash','play','rest'].includes(id)) setDrawerOpen(game.ui.homeDrawers,'care',true,Date.now(),true);
     game.draw();
     const button = game.scene.buttons.find(item => item.id === id);
@@ -333,7 +336,7 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   game.ui.page = 'home';
   game.lastAnimationDraw = 0;
   game.loop();
-  game.lastAnimationDraw = Date.now() + 1000;
+  game.lastAnimationDraw = game.now() + 1000;
   game.loop();
   assert.equal(draws, 4, 'pet animation does not repaint the full canvas');
   assert.equal(animationDraws, 1, 'pet animation is paced below the display frame rate');

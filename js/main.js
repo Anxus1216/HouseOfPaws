@@ -1,3 +1,4 @@
+import { createTransition, requestTransition, advanceTransition, finishTransition, transitionFrame } from './page-transition.js';
 import { mergeCareFeedback } from './care-feedback.js';
 import './render.js';
 import { createHomeDrawers, setDrawerOpen, finishHomeDrawers, homeDrawersAnimating, drawerProgress } from './home-drawers.js';
@@ -29,13 +30,14 @@ const PRESS_FALLBACK_MS = 500;
 
 export default class Main {
   constructor(options = {}) {
+    this.now = typeof options.now === 'function' ? options.now : () => Date.now();
     this.canvas = GameGlobal.canvas;
     this.ctx = this.canvas.getContext('2d');
     this.scene = new Scene(this.ctx, this.canvas);
     this.viewport = GameGlobal.viewport;
     this.scene.setViewport(this.viewport);
     this.state = this.load();
-    this.ui = { careFeedback: null, careReason: null, persistenceWarning: null, homeDrawers: createHomeDrawers(), page: 'home', speech: '', toast: '', toastUntil: 0,
+    this.ui = { pageTransition: createTransition('home', { durationMs: options.transitionDurationMs }), careFeedback: null, careReason: null, persistenceWarning: null, homeDrawers: createHomeDrawers(), page: 'home', speech: '', toast: '', toastUntil: 0,
       playing: false, paused: false, score: 0, remaining: 20, stars: [], basketX: 195,
       gameOutcome: null, quitConfirm: false,
       guideHoldUntil: 0, showSettings: false,
@@ -47,8 +49,8 @@ export default class Main {
       debugEditor: null, debugDraft: null, debugKeyboard: null,
       expression: 'normal', expressionUntil: 0, action: '', statDelta: '',
       pressedId: null };
-    this.lastFrame = Date.now();
-    this.lastSave = Date.now();
+    this.lastFrame = this.now();
+    this.lastSave = this.now();
     this.lastCareAt = 0;
     this.coinWayTouch = null;
     this.pressExpiresAt = 0;
@@ -56,7 +58,7 @@ export default class Main {
     this.needsDraw = true;
     if (this.saveReadFailed) this.notice('本机存档暂时不可用');
     this.lastAnimationDraw = 0;
-    this.lastViewportCheck = Date.now();
+    this.lastViewportCheck = this.now();
     this.scene.onAssetReady = () => { this.needsDraw = true; };
     this.scene.preloadSceneImages();
     this.visible = true;
@@ -67,6 +69,7 @@ export default class Main {
     try { if (wx.onWindowResize) wx.onWindowResize(() => this.syncViewport()); }
     catch (error) { logWarn('viewport.resize_listener_failed', { message: String(error) }); }
     if (wx.onHide) wx.onHide(() => {
+      finishTransition(this.ui.pageTransition);
       finishHomeDrawers(this.ui.homeDrawers);
       this.visible = false;
       this.cancelTouch();
@@ -76,13 +79,13 @@ export default class Main {
     });
     if (wx.onShow) wx.onShow(() => {
       this.syncViewport();
-      settleTime(this.state, Date.now());
+      settleTime(this.state, this.now());
       ensureTasks(this.state);
-      reconcileGuide(this.state, Date.now());
+      reconcileGuide(this.state, this.now());
       if (this.ui.rewardHelp && this.ui.rewardHelp.date !== dayKey()) {
         this.ui.rewardHelp = null;
       }
-      this.lastFrame = Date.now();
+      this.lastFrame = this.now();
       this.visible = true;
       this.needsDraw = true;
       logInfo('app.shown', { gamePaused: this.ui.playing && this.ui.paused });
@@ -95,7 +98,7 @@ export default class Main {
   syncViewport() {
     // The backing store may be larger than the logical window.
     const viewport = readViewport(wx, this.viewport || {});
-    this.lastViewportCheck = Date.now();
+    this.lastViewportCheck = this.now();
     if (!viewport || sameViewport(this.viewport, viewport)) return false;
     const resized = !this.viewport || viewport.width !== this.viewport.width ||
       viewport.height !== this.viewport.height;
@@ -104,7 +107,9 @@ export default class Main {
       viewport.right !== this.viewport.right;
     this.viewportFieldChanged = fieldChanged;
     const oldField = this.ui.playing && fieldChanged ? this.scene.gameField() : null;
+    finishTransition(this.ui.pageTransition);
     if (fieldChanged) {
+      finishTransition(this.ui.pageTransition);
       finishHomeDrawers(this.ui.homeDrawers);
       if (this.ui.playing) this.ui.paused = true;
       this.debugTouch = null;
@@ -132,7 +137,7 @@ export default class Main {
         star.y = newField.y + (star.y - oldField.y) * newField.h / oldField.h;
       });
     }
-    this.lastFrame = Date.now();
+    this.lastFrame = this.now();
     this.draw();
     this.needsDraw = false;
     return true;
@@ -142,7 +147,7 @@ export default class Main {
     try {
       const raw = wx.getStorageSync(STORAGE_KEY);
       // WeChat returns an empty string when this key has never been saved.
-      const state = hydrate(raw === '' ? null : raw, Date.now());
+      const state = hydrate(raw === '' ? null : raw, this.now());
       const source = raw == null || raw === '' ? 'new' :
         raw && typeof raw === 'object' && !Array.isArray(raw) ? 'stored' : 'invalid';
       this.saveDisabled = source === 'invalid';
@@ -155,7 +160,7 @@ export default class Main {
       logError('save.load_failed', { message: String(error) });
       this.saveDisabled = true;
       this.saveReadFailed = true;
-      return hydrate({}, Date.now());
+      return hydrate({}, this.now());
     }
   }
 
@@ -165,7 +170,7 @@ export default class Main {
       this.notice(this.ui.persistenceWarning);
       return false;
     }
-    settleTime(this.state, Date.now());
+    settleTime(this.state, this.now());
     try {
       wx.setStorageSync(STORAGE_KEY, this.state);
       this.ui.persistenceWarning = null;
@@ -181,7 +186,7 @@ export default class Main {
 
   notice(message) {
     this.ui.toast = message;
-    this.ui.toastUntil = Date.now() + 2200;
+    this.ui.toastUntil = this.now() + 2200;
     this.needsDraw = true;
   }
 
@@ -190,8 +195,8 @@ export default class Main {
       const guideAdvanced = recordGuideEvent(this.state, 'adopt');
       const species = SPECIES.find(item => item.id === speciesId);
       logInfo('pet.adopted', { species: speciesId, coins: this.state.coins });
-      this.ui.page = 'home'; this.ui.speech = '终于见到你啦！';
-      this.ui.expression = 'happy'; this.ui.expressionUntil = Date.now() + FEEDBACK_MS.tap;
+      this.requestPage('home', { immediate: true }); this.ui.speech = '终于见到你啦！';
+      this.ui.expression = 'happy'; this.ui.expressionUntil = this.now() + FEEDBACK_MS.tap;
       this.ui.action = ''; this.ui.statDelta = '';
       this.notice(speciesId === 'cat' ? '欢迎新伙伴加入小屋 ♡' :
         `欢迎${species.name}来到小屋！`);
@@ -224,7 +229,7 @@ export default class Main {
     this.needsDraw = true;
   }
 
-  currentCoinWays(now = Date.now()) {
+  currentCoinWays(now = this.now()) {
     if (!this.ui.coinWaysTarget) return null;
     const target = this.ui.coinWaysTarget;
     const offer = target?.kind === 'care' ?
@@ -235,10 +240,30 @@ export default class Main {
 
   draw() {
     const feedback = this.ui.careFeedback;
-    if (feedback && (feedback.petId !== this.state.active || this.ui.page !== 'home' || feedback.until <= Date.now())) {
+    if (feedback && (feedback.petId !== this.state.active || this.ui.page !== 'home' || feedback.until <= this.now())) {
       this.ui.careFeedback = null;
     }
+    const transition = this.ui.pageTransition;
+    if (transition.phase === 'idle' && transition.targetPage !== this.ui.page) {
+      requestTransition(transition, this.ui.page, this.now(), { immediate: true });
+    }
+    if (this.ui.showSettings || this.ui.adoptionConfirmId || this.ui.coinWaysTarget ||
+        this.ui.showGrowthHelp || this.ui.rewardHelp || this.ui.debugEditor) finishTransition(transition);
+    this.ui.frameNow = this.now();
     this.scene.draw(this.state, this.ui, this.currentCoinWays());
+  }
+
+  requestPage(next, options = {}) {
+    if (next === this.ui.page) return false;
+    const frame = requestTransition(this.ui.pageTransition, next, this.now(), options);
+    if (!frame.accepted) return false;
+    if (this.ui.playing && next !== 'game') this.ui.paused = true;
+    this.cancelTouch();
+    this.clearHomeFeedback();
+    this.ui.page = next;
+    this.ui.adviceExplanation = null;
+    this.needsDraw = true;
+    return true;
   }
 
   clearHomeFeedback() {
@@ -257,7 +282,7 @@ export default class Main {
     if (!way) return;
     this.closeCoinWays();
     this.clearHomeFeedback();
-    this.ui.page = way.page;
+    this.requestPage(way.page);
   }
 
   playSound(name) {
@@ -300,10 +325,10 @@ export default class Main {
     // when it still points to the same target after the redraw.
     if (changed && previousId !== this.scene.hit(p.x, p.y)) return;
     this.needsDraw = true;
-    settleTime(this.state, Date.now());
+    settleTime(this.state, this.now());
     const id = this.scene.hit(p.x, p.y);
     this.ui.pressedId = id;
-    this.pressExpiresAt = id ? Date.now() + PRESS_FALLBACK_MS : 0;
+    this.pressExpiresAt = id ? this.now() + PRESS_FALLBACK_MS : 0;
     if (this.ui.debugEditor) {
       this.debugTouch = { startY: p.y, lastY: p.y, moved: false };
       return;
@@ -338,13 +363,14 @@ export default class Main {
       }
       return;
     }
+    if (transitionFrame(this.ui.pageTransition).active && !id?.startsWith('nav_')) return;
     if (id === 'guide_skip') {
       if (recordGuideEvent(this.state, 'skip')) this.save();
       return;
     }
     if (id === 'guide_finish' || id === 'guide_game') {
       if (recordGuideEvent(this.state, 'finish')) this.save();
-      if (id === 'guide_game') this.ui.page = 'game';
+      if (id === 'guide_game') this.requestPage('game');
       return;
     }
     if (this.ui.quitConfirm) {
@@ -352,7 +378,7 @@ export default class Main {
       else if (id === 'quit_confirm_continue' && this.ui.playing) {
         this.ui.quitConfirm = false;
         this.ui.paused = false;
-        this.lastFrame = Date.now();
+        this.lastFrame = this.now();
         logInfo('game.resumed', { remaining: this.ui.remaining });
       } else if (id === 'quit_confirm_end' && this.ui.playing && this.ui.paused) {
         this.ui.quitConfirm = false;
@@ -375,7 +401,7 @@ export default class Main {
       return;
     }
     if (id === 'resume_game' && this.ui.playing && this.ui.paused) {
-      this.ui.paused = false; this.lastFrame = Date.now();
+      this.ui.paused = false; this.lastFrame = this.now();
       logInfo('game.resumed', { remaining: this.ui.remaining });
       return;
     }
@@ -389,9 +415,7 @@ export default class Main {
     }
     if (!id) return;
     if (id.startsWith('nav_')) {
-      if (this.ui.playing && id !== 'nav_game') this.ui.paused = true;
-      if (this.ui.page !== id.slice(4)) this.clearHomeFeedback();
-      this.ui.page = id.slice(4);
+      this.requestPage(id.slice(4));
       this.ui.adviceExplanation = null;
       return;
     }
@@ -424,7 +448,7 @@ export default class Main {
       } else {
         this.ui.adviceExplanation = {
           detail: homeAdviceDetail(advice), compactDetail: homeAdviceDetail(advice, true),
-          until: Date.now() + 2200 };
+          until: this.now() + 2200 };
         this.ui.toast = '';
         this.ui.toastUntil = 0;
       }
@@ -432,14 +456,14 @@ export default class Main {
     }
     if (id === 'game_help') { this.notice('左右滑动篮子接星星，20 秒后结算奖励'); return; }
     if (id === 'game_return_home' && !this.ui.playing && this.ui.gameOutcome) {
-      this.ui.page = 'home'; return;
+      this.requestPage('home'); return;
     }
     if (id === 'game_task_reward' && !this.ui.playing && this.ui.gameOutcome) {
-      this.ui.page = 'tasks'; return;
+      this.requestPage('tasks'); return;
     }
     if (id.startsWith('task_go_')) {
       const task = id.slice(8);
-      this.ui.page = task === 'game' ? 'game' : 'home';
+      this.requestPage(task === 'game' ? 'game' : 'home');
       if (task === 'interact') this.notice('轻点小伙伴，就能完成互动');
       else if (task === 'care') this.notice('选择一种照料方式，完成今日目标');
       return;
@@ -464,7 +488,7 @@ export default class Main {
       if (!selectPet(this.state, speciesId)) return;
       logInfo('pet.selected', { species: this.state.active });
       this.clearHomeFeedback();
-      this.ui.page = 'home'; this.ui.speech = ''; this.ui.expressionUntil = 0;
+      this.requestPage('home'); this.ui.speech = ''; this.ui.expressionUntil = 0;
       this.ui.action = ''; this.ui.statDelta = '';
       this.ui.adviceExplanation = null;
       this.save(); return;
@@ -507,7 +531,7 @@ export default class Main {
     if (id === 'pet_tap') {
       this.ui.adviceExplanation = null;
       const guidedResponse = guideInteractionResponse(this.state);
-      this.ui.expression = 'happy'; this.ui.expressionUntil = Date.now() + FEEDBACK_MS.tap;
+      this.ui.expression = 'happy'; this.ui.expressionUntil = this.now() + FEEDBACK_MS.tap;
       this.ui.action = ''; this.ui.statDelta = '';
       recordTask(this.state, 'interact');
       const guideAdvanced = recordGuideEvent(this.state, 'pet_tap');
@@ -521,7 +545,7 @@ export default class Main {
       if (!this.ui.homeDrawers.care.targetOpen ||
           drawerProgress(this.ui.homeDrawers.care) < .999) return;
       this.ui.adviceExplanation = null;
-      const now = Date.now();
+      const now = this.now();
       if (now - this.lastCareAt < 350) return;
       const pet = this.state.pets[this.state.active];
       const before = pet && { hunger: pet.hunger, clean: pet.clean, happy: pet.happy, energy: pet.energy };
@@ -575,7 +599,8 @@ export default class Main {
   }
 
   move(event) {
-    if (Date.now() - this.lastViewportCheck >= 500 && this.syncViewport() &&
+    if (transitionFrame(this.ui.pageTransition).active) { this.cancelTouch(); return; }
+    if (this.now() - this.lastViewportCheck >= 500 && this.syncViewport() &&
       this.viewportFieldChanged) return;
     if (this.ui.pressedId) {
       const p = this.coords(event);
@@ -622,6 +647,7 @@ export default class Main {
   }
 
   touchEnd(event) {
+    if (transitionFrame(this.ui.pageTransition).active) { this.cancelTouch(); return; }
     if (this.ui.pressedId) {
       this.ui.pressedId = null;
       this.pressExpiresAt = 0;
@@ -655,10 +681,11 @@ export default class Main {
   }
 
   openDebugEditor() {
+    finishTransition(this.ui.pageTransition);
     if (!this.ui.debugEnabled) return;
     if (this.ui.playing) this.ui.paused = true;
     this.ui.showSettings = false;
-    this.ui.debugDraft = createDebugDraft(this.state, Date.now());
+    this.ui.debugDraft = createDebugDraft(this.state, this.now());
     this.ui.debugEditor = { scroll: 0, maxScroll: 0, errors: {}, message: '', confirmDiscard: false };
     this.ui.debugKeyboard = null;
     logInfo('debug.opened', { pet: this.state.active });
@@ -719,7 +746,7 @@ export default class Main {
       if (draftChanged(draft)) editor.confirmDiscard = true;
       else this.closeDebugEditor();
     } else if (id === 'debug_save') {
-      const now = Date.now();
+      const now = this.now();
       const result = commitDebugDraft(this.state, draft, now,
         candidate => wx.setStorageSync(STORAGE_KEY, candidate), ui.debugEnabled);
       if (result.state) {
@@ -762,7 +789,7 @@ export default class Main {
   }
 
   startGame() {
-    this.lastFrame = Date.now();
+    this.lastFrame = this.now();
     this.ui.playing = true;
     this.ui.paused = false;
     this.ui.score = 0;
@@ -807,7 +834,7 @@ export default class Main {
     if (ui.remaining <= 0) {
       ui.playing = false;
       ui.remaining = 0;
-      const now = Date.now();
+      const now = this.now();
       const reward = miniReward(this.state, ui.score, now);
       logInfo('game.completed', { pet: this.state.active, score: ui.score,
         coins: reward.coins, xp: reward.xp, leveled: reward.leveled });
@@ -831,7 +858,7 @@ export default class Main {
   }
 
   loop() {
-    const now = Date.now();
+    const now = this.now();
     if (this.visible && now - this.lastViewportCheck >= 500) this.syncViewport();
     const dt = Math.max(0, (now - this.lastFrame) / 1000);
     this.lastFrame = now;
@@ -878,6 +905,8 @@ export default class Main {
       this.ui.rewardHelp = null;
       this.needsDraw = true;
     }
+    const transition = advanceTransition(this.ui.pageTransition, now);
+    const pageAnimating = transition.wasActive || transition.active || transition.changed || transition.completed;
     const drawersAnimating = homeDrawersAnimating(this.ui.homeDrawers, now - dt * 1000) ||
       homeDrawersAnimating(this.ui.homeDrawers, now);
     const wasAnimated = this.isAnimated();
@@ -885,10 +914,10 @@ export default class Main {
     const guideAnimating = !!this.scene.visibleGuide(this.state, this.ui, now);
     const animated = wasAnimated || this.isAnimated() || guideAnimating;
     const gameAnimating = this.ui.page === 'game' && this.ui.playing;
-    if (this.visible && (this.needsDraw || drawersAnimating ||
+    if (this.visible && (this.needsDraw || drawersAnimating || pageAnimating ||
         (animated && (gameAnimating ||
           now - this.lastAnimationDraw >= PET_ANIMATION_INTERVAL_MS)))) {
-      if (this.needsDraw || guideAnimating || drawersAnimating) this.draw();
+      if (this.needsDraw || guideAnimating || drawersAnimating || pageAnimating) this.draw();
       else this.scene.drawAnimation(this.state, this.ui);
       this.lastAnimationDraw = now;
       this.needsDraw = false;
