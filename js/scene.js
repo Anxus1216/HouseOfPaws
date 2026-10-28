@@ -50,6 +50,7 @@ const COMPACT_LAYOUT_HEIGHT = 680;
 const EXPANDED_LAYOUT_HEIGHT = 844;
 const GAME_FIELD_COMPACT_HEIGHT = 356;
 const NAV_HEIGHT = 64;
+const MIN_CLOSE_HIT_SIZE_PX = 44;
 const HOME_STATS = Object.freeze([
   { label: '饱腹', field: 'hunger', color: '#F3A34D' },
   { label: '清洁', field: 'clean', color: '#58AA9B' },
@@ -432,7 +433,15 @@ export default class Scene {
       c.restore();
     }
     this.readableText(label, x + w / 2, y + h / 2 + 1 + inset, fontSize, color, 'center', 'bold');
-    this.buttons.push({ id, x, y, w, h });
+    if (id.endsWith('_close')) {
+      const hitWidth = Math.max(w, MIN_CLOSE_HIT_SIZE_PX / this.scale);
+      const hitHeight = Math.max(h, MIN_CLOSE_HIT_SIZE_PX / this.scale);
+      this.buttons.push({ id, x: x - (hitWidth - w) / 2,
+        y: Math.max(0, Math.min(this.h - hitHeight, y - (hitHeight - h) / 2)),
+        w: hitWidth, h: hitHeight });
+    } else {
+      this.buttons.push({ id, x, y, w, h });
+    }
   }
 
   roundIconButton(id, cx, cy, radius, glyph) {
@@ -440,8 +449,9 @@ export default class Scene {
     this.circle(cx, cy, radius,
       this.pressedId === id ? PRESS.icon : '#F8EFE5', FABRIC.edge, 1);
     this.text(glyph, cx, cy + 1, 20, C.brown, 'center');
-    this.buttons.push({ id, x: cx - radius, y: cy - radius,
-      w: radius * 2, h: radius * 2 });
+    const hitSize = Math.max(radius * 2, MIN_CLOSE_HIT_SIZE_PX / this.scale);
+    this.buttons.push({ id, x: cx - hitSize / 2, y: cy - hitSize / 2,
+      w: hitSize, h: hitSize });
   }
 
   background(x = 0, y = 0, w = 390, h = this.h) {
@@ -736,7 +746,8 @@ export default class Scene {
     this.fabricPanel(wallet.x, wallet.y, wallet.w, wallet.h, 20 * unit, C.peach, false);
     this.readableText(`✦ ${state.coins}`, wallet.x + wallet.w / 2, wallet.y + wallet.h / 2, 13, C.brown, 'center', 'bold');
     const settings = layout.settings;
-    this.circle(settings.x + settings.w / 2, settings.y + settings.h / 2, 20 * unit, '#F8EFE5');
+    this.circle(settings.x + settings.w / 2, settings.y + settings.h / 2, 20 * unit,
+      this.pressedId === 'settings' ? PRESS.icon : '#F8EFE5');
     this.text('⚙', settings.x + settings.w / 2, settings.y + settings.h / 2, 20, C.brown, 'center');
     this.buttons.push({ id: 'settings', ...settings });
   }

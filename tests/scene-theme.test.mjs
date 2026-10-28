@@ -64,6 +64,25 @@ test('sound switch has separate on, off, and pressed colors', () => {
   assert.equal(track(), '#D9D8D0');
 });
 
+test('settings retain pressed color and modal close targets stay 44 window pixels', () => {
+  const view = scene();
+  view.setViewport({ width: 320, height: 568, top: 24, bottom: 34,
+    left: 0, right: 0, menuBottom: 60 });
+  view.resize();
+  const colors = [];
+  view.circle = (...args) => colors.push(args[3]);
+  view.pressedId = 'settings';
+  view.compactControls({ coins: 60 }, view.homeGeometry());
+  assert.ok(colors.includes('#EBD7C4'));
+  view.buttons = [];
+  view.roundIconButton('settings_close', 318, 200, 17, '×');
+  view.button('home_growth_close', 65, 300, 260, 41, '知道了');
+  for (const button of view.buttons) {
+    assert.ok(button.w * view.scale >= 44 && button.h * view.scale >= 44,
+      `${button.id} has a minimum window-sized target`);
+  }
+});
+
 test('linen background loads asynchronously and redraws when ready', () => {
   const draws = [];
   const context = new Proxy({}, { get: (_, key) => key === 'drawImage' ?
