@@ -1,3 +1,4 @@
+import { setDrawerOpen } from '../js/home-drawers.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -55,6 +56,9 @@ test('guide follows real taps while the home hint replaces growth details', asyn
   assert.equal(game.state.guide.phase, 'care');
   assert.equal(game.ui.speech, '奶糖记住你啦');
   revealHint();
+  tap('home_care_toggle');
+  setDrawerOpen(game.ui.homeDrawers,'care',true,0,true);
+  game.ui.homeDrawers.care.from=1;
   tap('feed');
   assert.equal(game.state.guide.phase, 'claim');
   revealHint();

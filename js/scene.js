@@ -12,6 +12,8 @@ import { guideView } from './guide.js';
 import { PET_FIELDS } from './debug-editor.js';
 import { readViewport } from './viewport.js';
 import { logInfo, logWarn, logError } from './logger.js';
+import { computeHomeLayout } from './home-layout.js';
+import { drawerProgress } from './home-drawers.js';
 import { LINEN_ASSET, UI_SPRITES } from './ui-assets.js';
 
 const C = {
@@ -48,17 +50,6 @@ const COMPACT_LAYOUT_HEIGHT = 680;
 const EXPANDED_LAYOUT_HEIGHT = 844;
 const GAME_FIELD_COMPACT_HEIGHT = 356;
 const NAV_HEIGHT = 64;
-const HOME_LAYOUT = Object.freeze({
-  sceneX: 20, sceneWidth: 350, sceneRadius: 23,
-  sceneTopCompact: 136, sceneTopExpanded: 155,
-  sceneBelowControls: 82, sceneToStats: 8,
-  dockInset: 10, dockBottom: 10, dockHeight: 72, dockRadius: 17,
-  gaugeSize: 68, gaugeRadius: 27, gaugeStroke: 7.5,
-  gaugeAboveNav: 84, labelAboveNav: 16,
-  petScaleHeight: 450,
-});
-const HOME_INFO = Object.freeze({ x: 32, width: 326, top: 12,
-  growthHeight: 61, adviceTop: 79, adviceHeight: 28, speechTop: 114 });
 const HOME_STATS = Object.freeze([
   { label: '饱腹', field: 'hunger', color: '#F3A34D' },
   { label: '清洁', field: 'clean', color: '#58AA9B' },
@@ -122,6 +113,7 @@ export default class Scene {
   resize() {
     // Fit the 390-unit layout inside the visible safe rectangle.
     const viewport = this.viewport || readViewport(typeof wx === 'undefined' ? {} : wx, this.canvas);
+    this.layoutViewport = viewport;
     const top = viewport?.top ?? 0;
     const bottom = viewport?.bottom ?? 0;
     const left = viewport?.left ?? 0;
@@ -228,6 +220,7 @@ export default class Scene {
         };
         image.onerror = error => {
           entry.failed = true;
+          if (this.onAssetReady) this.onAssetReady();
           logError('scene.ui_sprite_load_failed', { name, message: String(error) });
         };
         image.src = path;
@@ -466,25 +459,25 @@ export default class Scene {
   }
 
   homeLayout() {
-    const { ratio, navY } = this.layout();
-    const sceneY = Math.max(HOME_LAYOUT.sceneTopCompact +
-      (HOME_LAYOUT.sceneTopExpanded - HOME_LAYOUT.sceneTopCompact) * ratio,
-    this.headerControlsY + HOME_LAYOUT.sceneBelowControls);
-    const gaugeY = navY - HOME_LAYOUT.gaugeAboveNav;
-    const sceneBottom = gaugeY - HOME_LAYOUT.sceneToStats;
-    const dockX = HOME_LAYOUT.sceneX + HOME_LAYOUT.dockInset;
-    const dockW = HOME_LAYOUT.sceneWidth - HOME_LAYOUT.dockInset * 2;
-    return { sceneY, sceneBottom, sceneH: sceneBottom - sceneY,
-      gaugeY, gaugeBottom: gaugeY + HOME_LAYOUT.gaugeSize,
-      labelY: navY - HOME_LAYOUT.labelAboveNav,
-      dockX, dockW, dockY: sceneBottom - HOME_LAYOUT.dockBottom - HOME_LAYOUT.dockHeight };
+    const layout = this.homeGeometry();
+    return {
+      sceneY: layout.scene.y,
+      sceneH: layout.scene.h,
+      sceneBottom: layout.scene.y + layout.scene.h,
+      dockY: layout.carePanel.y,
+      dockX: layout.carePanel.x,
+      dockW: layout.carePanel.w,
+    };
   }
 
   header(state, heading, description, caption, settings = true, dark = false) {
     const { ratio } = this.layout();
     const headingColor = dark ? '#FFF8E8' : C.ink;
     const detailColor = dark ? '#FBE9CA' : C.brown;
-    this.text('爪爪小屋', 20, 35, 18, headingColor, 'left', 'bold');
+    const compact = ['陪伴日记', '小伙伴们', '每日清单'].includes(heading) ||
+      (heading === '星星接接乐' && !this.currentUi?.playing && !this.currentUi?.gameOutcome);
+    if (compact) { this.compactControls(state, this.homeGeometry()); return; }
+    if (!compact) this.text('爪爪小屋', 20, 35, 18, headingColor, 'left', 'bold');
     const controlsY = this.headerControlsY;
     const coinY = controlsY + HEADER_COIN.topOffset;
     this.fabricPanel(HEADER_COIN.x, coinY, HEADER_COIN.width, HEADER_COIN.height,
@@ -499,7 +492,7 @@ export default class Scene {
       this.buttons.push({ id: 'settings', x: 346, y: controlsY, w: 38, h: 38 });
     }
     const headingY = 83 + 16 * ratio;
-    this.text(heading, 20, headingY, dark ? 27 : HEADER_TYPE.headingSize,
+    if (!compact) this.text(heading, 20, headingY, dark ? 27 : HEADER_TYPE.headingSize,
       headingColor, 'left', 'bold');
     this.text(description, 20, headingY + HEADER_TYPE.descriptionBelowHeading,
       HEADER_TYPE.descriptionSize, detailColor);
@@ -659,36 +652,6 @@ export default class Scene {
     c.restore();
   }
 
-  drawHomeGauge(x, y, value, color) {
-    const c = this.ctx;
-    const centerY = y + 42;
-    const start = Math.PI;
-    const sweep = Math.PI;
-    c.save();
-    c.lineWidth = HOME_LAYOUT.gaugeStroke;
-    c.lineCap = 'round';
-    c.beginPath(); c.arc(x, centerY, HOME_LAYOUT.gaugeRadius, start, start + sweep);
-    c.strokeStyle = '#E8DDD1'; c.stroke();
-    if (value > 0) {
-      c.beginPath(); c.arc(x, centerY, HOME_LAYOUT.gaugeRadius,
-        start, start + sweep * clamp(value, 0, 100) / 100);
-      c.strokeStyle = color; c.stroke();
-    }
-    c.restore();
-    this.text(`${Math.round(value)}%`, x, centerY - 7, 13, C.ink, 'center', 'bold');
-  }
-
-  homeStats(pet, layout) {
-    this.fabricPanel(HOME_LAYOUT.sceneX, layout.gaugeY - 6, HOME_LAYOUT.sceneWidth,
-      this.layout().navY - layout.gaugeY + 1, 17, '#FFF3E2', false);
-    const columnWidth = HOME_LAYOUT.sceneWidth / HOME_STATS.length;
-    HOME_STATS.forEach((stat, index) => {
-      const x = HOME_LAYOUT.sceneX + columnWidth * (index + .5);
-      this.drawHomeGauge(x, layout.gaugeY, pet[stat.field], stat.color);
-      this.readableText(stat.label, x, layout.labelY, 11, C.brown, 'center', 'bold');
-    });
-  }
-
   careIcon(id, x, y, color) {
     const c = this.ctx;
     c.save(); c.translate(x, y);
@@ -718,142 +681,167 @@ export default class Scene {
   }
 
   homeActions(state, layout) {
-    this.fabricPanel(layout.dockX, layout.dockY - 8, layout.dockW,
-      HOME_LAYOUT.dockHeight + 12, 23, 'rgba(255,249,239,.9)', false);
-    const columnWidth = layout.dockW / HOME_ACTIONS.length;
+    const unit = layout.unit;
     HOME_ACTIONS.forEach((action, index) => {
-      const effect = CARE_ACTIONS[action.id];
-      const x = layout.dockX + columnWidth * (index + .5);
+      const item = layout.careItems[index];
       const block = careBlock(state, action.id);
-      const unavailable = !!block;
-      const iconY = layout.dockY + 18;
-      // A blocked care action stays tappable so its specific reason can be shown.
-      const iconFill = this.pressedId === action.id ? action.pressed : action.fill;
-      this.circle(x, iconY + 3, 27, 'rgba(104, 67, 44, .17)');
-      this.circle(x, iconY, 27, iconFill, 'rgba(255, 255, 255, .8)', 1.5);
-      if (!this.drawUiSprite(`care-${action.icon}-v2`, x - 25,
-        iconY - 25 + (this.pressedId === action.id ? 1 : 0), 50, 50))
-        this.careIcon(action.icon, x, iconY, C.paper, iconFill);
-      this.readableText(action.label, x, layout.dockY + 50, 11,
-        C.brown, 'center', 'bold');
-      this.readableText(careShortReason(block, action.id, this.scale < 1) ||
-        (effect.cost ? `✦ ${effect.cost}` : '免费'),
-      x, layout.dockY + 70, 9, unavailable ? C.brown : C.muted, 'center');
-      this.buttons.push({ id: action.id,
-        x: layout.dockX + index * columnWidth + 2,
-        y: layout.dockY + 2, w: columnWidth - 4, h: HOME_LAYOUT.dockHeight - 4 });
+      const effect = CARE_ACTIONS[action.id];
+      if (this.pressedId === action.id) this.box(item.x, item.y, item.w, item.h, 10 * unit, action.pressed);
+      this.drawUiSprite(`care-${action.icon}-v2`, item.x + item.w / 2-16 * unit, item.y + 2 * unit, 32 * unit, 32 * unit);
+      this.readableText(action.label, item.x + item.w / 2, item.y + 38 * unit, 12, C.brown,'center', 'bold');
+      this.readableText(careShortReason(block, action.id, true) || (effect.cost ? `${effect.cost}爪爪币`:'免费'),
+        item.x + item.w / 2, item.y + 54 * unit, 11, C.muted,'center');
+      this.buttons.push({ id: action.id, ...item });
     });
+  }
+
+  homeGeometry() {
+    const viewport = this.viewport || { ...this.layoutViewport,
+      width: this.canvas.width, height: this.canvas.height,
+      top: this.layoutViewport?.top || this.offsetY,
+      bottom: this.layoutViewport?.bottom || 0 };
+    return computeHomeLayout(viewport, this);
+  }
+
+  drawerButton(id, sprite, bounds, open, vertical = false) {
+    const unit = 1 / this.scale;
+    this.circle(bounds.x + bounds.w / 2, bounds.y + bounds.h / 2, bounds.w / 2,
+      this.pressedId === id ? PRESS.icon : open ? '#EDF2E4' : '#FFF8E9', open ? '#8EAC94' : '#CDB89B', unit);
+    if (!this.drawUiSprite(sprite, bounds.x + 7 * unit, bounds.y + 11 * unit, 30 * unit, 30 * unit))
+      this.readableText(vertical ? '状态' : '照料', bounds.x + 21 * unit, bounds.y + 26 * unit,
+        11, C.brown, 'center');
+    const x = bounds.x + 44 * unit;
+    const y = bounds.y + 26 * unit;
+    const direction = open ? -1 : 1;
+    this.line(vertical ? [[x - 3 * unit, y - 2 * direction * unit], [x, y + direction * unit], [x + 3 * unit, y - 2 * direction * unit]] :
+      [[x - 2 * direction * unit, y - 3 * unit], [x + direction * unit, y], [x - 2 * direction * unit, y + 3 * unit]], C.brown, 1.5 * unit);
+    this.buttons.push({ id, ...bounds });
+  }
+
+  compactHeader(state, pet, layout) {
+    const unit = layout.unit;
+    const identity = layout.identity;
+    this.readableText(pet.name, identity.x, identity.y + 13 * unit, 17, C.ink, 'left', 'bold');
+    this.readableText(`Lv.${pet.level}`, identity.x, identity.y + 32 * unit, 11, C.muted);
+    const growth = growthSummary(pet);
+    this.readableText(growth.progress, identity.x, identity.y + 49 * unit, 11, C.brown);
+    this.readableText(`${growth.today} ›`, identity.x, identity.y + 63 * unit, 10, C.muted);
+    this.buttons.push({ id: 'home_growth_help', ...layout.growth });
+    this.compactControls(state, layout);
+  }
+
+  compactControls(state, layout) {
+    const unit = layout.unit;
+    const wallet = layout.wallet;
+    this.fabricPanel(wallet.x, wallet.y, wallet.w, wallet.h, 20 * unit, C.peach, false);
+    this.readableText(`✦ ${state.coins}`, wallet.x + wallet.w / 2, wallet.y + wallet.h / 2, 13, C.brown, 'center', 'bold');
+    const settings = layout.settings;
+    this.circle(settings.x + settings.w / 2, settings.y + settings.h / 2, 20 * unit, '#F8EFE5');
+    this.text('⚙', settings.x + settings.w / 2, settings.y + settings.h / 2, 20, C.brown, 'center');
+    this.buttons.push({ id: 'settings', ...settings });
   }
 
   home(state, ui) {
     const pet = state.pets[state.active];
-    const layout = this.homeLayout();
-    const sceneCenterX = HOME_LAYOUT.sceneX + HOME_LAYOUT.sceneWidth / 2;
-    this.header(state, '陪伴日记', '今天也一起慢慢长大', '');
+    const layout = this.homeGeometry();
+    const unit = layout.unit;
     const display = petDisplay(pet, ui);
-    const backdrop = CARE_SCENE[display.action] || 'home_afternoon';
-    this.sceneBackdrop(backdrop, HOME_LAYOUT.sceneX, layout.sceneY,
-      HOME_LAYOUT.sceneWidth, layout.sceneH, HOME_LAYOUT.sceneRadius, '#F2D8B8');
-    this.sceneFrame(HOME_LAYOUT.sceneX, layout.sceneY, HOME_LAYOUT.sceneWidth,
-      layout.sceneH, HOME_LAYOUT.sceneRadius);
-    this.loadUiSprite('care-wash-front');
-    this.loadUiSprite('care-rest-front');
-    const petSize = clamp(layout.sceneH / HOME_LAYOUT.petScaleHeight, .8, 1.08);
-    this.pet(pet.id, sceneCenterX, layout.dockY - petSize * 130, petSize, this.time,
-      display.expression, display.action);
-    if (display.action === 'wash' || display.action === 'rest') {
-      const prop = display.action === 'wash' ? 'care-wash-front' : 'care-rest-front';
-      this.drawUiSprite(prop, sceneCenterX - 142 * petSize,
-        layout.dockY - 150 * petSize, 284 * petSize, 97 * petSize);
+    const guide = this.visibleGuide(state, ui);
+    this.compactHeader(state, pet, layout);
+    // Existing main teaching hides growth details while the pet is its target.
+    if (guide && guide.phase !== 'outro') this.buttons = this.buttons.filter(b => b.id !== 'home_growth_help');
+    const scene = layout.scene;
+    this.sceneBackdrop(CARE_SCENE[display.action] || 'home_afternoon', scene.x, scene.y, scene.w, scene.h, 23 * unit,'#F2D8B8');
+    this.sceneFrame(scene.x, scene.y, scene.w, scene.h, 23 * unit);
+    const portrait = layout.pet;
+    const size = Math.min(portrait.w / 300, portrait.h / 300);
+    this.pet(pet.id, portrait.x + portrait.w / 2, portrait.y + 170 * size, size, this.time, display.expression, display.action);
+    if (display.action === 'wash' || display.action === 'rest')
+      this.drawUiSprite(display.action === 'wash' ? 'care-wash-front' : 'care-rest-front',
+        portrait.x + portrait.w / 2 - 142 * size, portrait.y + 190 * size, 284 * size, 97 * size);
+    this.buttons.push({ id: 'pet_tap', ...portrait });
+    const drawers = ui.homeDrawers;
+    const now = Date.now();
+    const care = drawerProgress(drawers?.care, now);
+    const status = drawerProgress(drawers?.status, now);
+    const drawClipped = (r, progress, vertical, draw) => {
+      if (progress <= 0) return;
+      this.ctx.save();
+      this.ctx.beginPath();
+      this.ctx.rect(r.x, r.y, vertical ? r.w : r.w * progress, vertical ? r.h * progress : r.h);
+      this.ctx.clip();
+      draw();
+      this.ctx.restore();
+      // Consume blank panel regions so they never fall through to pet interaction.
+      this.buttons.push({ id: 'home_panel', ...r,
+        w: vertical ? r.w : r.w * progress, h: vertical ? r.h * progress : r.h });
+    };
+    drawClipped(layout.statusPanel, status, true, () => {
+      const r = layout.statusPanel;
+      this.fabricPanel(r.x, r.y, r.w, r.h, 15 * unit, C.paper, false);
+      HOME_STATS.forEach((stat, index) => {
+        const y = r.y + (index + .5) * r.h / 4;
+        this.readableText(stat.label, r.x + r.w / 2, y - 9 * unit, 12, C.muted,'center');
+        this.readableText(`${Math.round(pet[stat.field])}%`, r.x + r.w / 2, y + 7 * unit, 15, C.brown,'center', 'bold');
+        this.box(r.x + 10 * unit, y + 19 * unit, (r.w - 20 * unit) * pet[stat.field] / 100, 2 * unit, unit, stat.color);
+      });
+    });
+    drawClipped(layout.carePanel, care, false, () => {
+      const r = layout.carePanel;
+      this.fabricPanel(r.x, r.y, r.w, r.h, 18 * unit, C.paper, false);
+    });
+    if (care >= .999 && drawers?.care.targetOpen) this.homeActions(state, layout);
+    this.drawerButton('home_care_toggle', 'care-drawer-felt', layout.careEntry, !!drawers?.care.targetOpen);
+    this.drawerButton('home_status_toggle', 'state-drawer-felt', layout.statusEntry, !!drawers?.status.targetOpen, true);
+    const feedback = layout.feedback;
+    const advice = homeAdvice(state);
+    if (display.speech) this.readableText(display.speech, scene.x + 10 * unit, scene.y + 15 * unit, 11, C.brown);
+    if (display.statDelta || (ui.showHomeAdvice !== false && (!guide || guide.phase === 'outro'))) {
+      this.fabricPanel(feedback.x, feedback.y, feedback.w, feedback.h, 12 * unit, C.paper, false);
+      const lines = display.statDelta ? display.statDelta.split('|') :
+        [ui.adviceExplanation?.until > now ? ui.adviceExplanation.compactDetail : homeAdviceText(advice, true)];
+      lines.slice(0, 3).forEach((line, i) => this.readableText(line, feedback.x + 8 * unit, feedback.y + (13 + 16 * i) * unit, 11, C.brown));
+      this.buttons.push({ id: display.statDelta ? 'home_panel':'home_advice', ...feedback,
+        w: display.statDelta ? feedback.w : feedback.w - 44 * unit });
+      if (!display.statDelta) {
+        this.text('×', feedback.x + feedback.w - 22 * unit, feedback.y + feedback.h / 2, 17, C.muted,'center');
+        this.buttons.push({id: 'home_advice_close', x: feedback.x + feedback.w - 44 * unit, y: feedback.y, w: 44 * unit, h: feedback.h});
+      }
     }
-    this.buttons.push({ id: 'pet_tap', x: 82, y: layout.sceneY + 4,
-      w: 225, h: layout.dockY - layout.sceneY - 4 });
-    const infoX = HOME_INFO.x, infoY = layout.sceneY + HOME_INFO.top;
-    const homeGuide = this.visibleGuide(state, ui);
-    if (!homeGuide || homeGuide.phase === 'outro') {
-      this.box(infoX, infoY, HOME_INFO.width, HOME_INFO.growthHeight,
-        12, this.pressedId === 'home_growth_help' ? PRESS.row : 'rgba(255,249,239,.94)');
-      this.text(`${pet.name} · LV. ${pet.level}`, infoX + 11, infoY + 14,
-        13, C.brown, 'left', 'bold');
-      const growth = growthSummary(pet);
-      this.readableText(growth.progress, infoX + 11, infoY + 33, 11, C.brown);
-      this.readableText(`${growth.today}  ›`, infoX + 11, infoY + 51, 10, C.muted);
-      this.buttons.push({ id: 'home_growth_help', x: infoX, y: infoY + 23,
-        w: HOME_INFO.width, h: HOME_INFO.growthHeight - 23 });
-    }
-    if (ui.showHomeAdvice !== false && (!homeGuide || homeGuide.phase === 'outro')) {
-      const advice = homeAdvice(state);
-      const adviceY = layout.sceneY + HOME_INFO.adviceTop;
-      const closeWidth = 38;
-      this.box(infoX, adviceY, HOME_INFO.width, HOME_INFO.adviceHeight,
-        13, this.pressedId === 'home_advice' ? PRESS.row : 'rgba(255,249,239,.94)');
-      const explaining = ui.adviceExplanation?.until > Date.now();
-      const fullAdvice = explaining ? ui.adviceExplanation.detail : homeAdviceText(advice);
-      const fontSize = Math.max(11, 11 / this.scale);
-      const c = this.ctx;
-      c.save(); c.font = `bold ${fontSize}px sans-serif`;
-      const measured = c.measureText?.(fullAdvice)?.width;
-      c.restore();
-      const compact = (advice.kind === 'coins' && this.scale < 1) ||
-        (measured ?? fullAdvice.length * fontSize) > HOME_INFO.width - closeWidth - 16;
-      const displayAdvice = explaining ?
-        (compact ? ui.adviceExplanation.compactDetail : fullAdvice) : homeAdviceText(advice, compact);
-      this.readableText(displayAdvice, infoX + 11,
-        adviceY + HOME_INFO.adviceHeight / 2, 11, C.brown, 'left', 'bold');
-      if (this.pressedId === 'home_advice_close') this.box(
-        infoX + HOME_INFO.width - closeWidth, adviceY, closeWidth,
-        HOME_INFO.adviceHeight, 13, PRESS.icon);
-      this.text('×', infoX + HOME_INFO.width - closeWidth / 2,
-        adviceY + HOME_INFO.adviceHeight / 2, 17, C.muted, 'center');
-      this.buttons.push({ id: 'home_advice', x: infoX, y: adviceY,
-        w: HOME_INFO.width - closeWidth, h: HOME_INFO.adviceHeight });
-      this.buttons.push({ id: 'home_advice_close', x: infoX + HOME_INFO.width - closeWidth,
-        y: adviceY - 4, w: closeWidth, h: HOME_INFO.adviceHeight + 8 });
-    }
-    if (display.speech) {
-      this.box(103, layout.sceneY + HOME_INFO.speechTop, 184, 30, 15, C.paper);
-      this.text(display.speech.slice(0, 13), sceneCenterX,
-        layout.sceneY + HOME_INFO.speechTop + 16,
-        11, C.brown, 'center');
-    }
-    if (display.statDelta) {
-      const lines = display.statDelta.split('|');
-      const feedbackH = lines.length > 1 ? 16 + lines.length * 19 : 27;
-      const feedbackY = layout.dockY - feedbackH - 8;
-      this.box(43, feedbackY, 304, feedbackH, 13, '#FFF5E7');
-      this.text(lines[0], sceneCenterX, feedbackY + 14,
-        lines.length > 1 ? 10 : 12, C.coral, 'center', 'bold');
-      lines.slice(1).forEach((line, index) => this.text(line, sceneCenterX,
-        feedbackY + 33 + index * 19, 11, C.brown, 'center', 'bold'));
-    }
-    this.homeActions(state, layout);
-    this.homeStats(pet, layout);
     this.nav('home', state);
   }
 
   nav(active, state) {
-    const y = this.layout().navY;
-    this.box(0, y - 1, 390, NAV_HEIGHT + 1, 0, C.paper);
+    const geometry = this.homeGeometry();
+    const { x: navX, y: navY, w: navW, h: navH } = geometry.nav;
+    const y = 0;
+    const navScale = navW / 390;
+    this.ctx.save();
+    this.ctx.translate(navX, navY);
+    this.ctx.scale(navScale, navH / NAV_HEIGHT);
+    this.box(0, -1, 390, NAV_HEIGHT + 1, 0, C.paper);
     this.linenOverlay(0, y, 390, NAV_HEIGHT, 0, .55);
     this.line([[0, y], [390, y]], FABRIC.edge, 1);
     [['home', '小屋'], ['collection', '萌宠'],
       ['tasks', '任务'], ['game', '游戏']].forEach((item, i) => {
       const x = i * 97.5;
       const selected = active === item[0];
+      if (selected) this.box(x + 8, y + 5, 81, NAV_HEIGHT - 10, 14, '#EDF2E4');
       if (this.pressedId === 'nav_' + item[0])
         this.box(x + 8, y + 5, 81, NAV_HEIGHT - 10, 14, PRESS.nav);
       this.navIcon(item[0], x + 48.75, y + 27,
         selected ? '#418F81' : C.brown, selected);
       this.readableText(item[1], x + 48.75, y + 54, 11,
         selected ? '#418F81' : C.muted, 'center', selected ? 'bold' : 'normal');
-      this.buttons.push({ id: 'nav_' + item[0], x, y: y + 3,
-        w: 97.5, h: NAV_HEIGHT - 7 });
+      this.buttons.push({ id: 'nav_' + item[0], x: navX + x * navScale, y: navY + 3 * navH / NAV_HEIGHT,
+        w: 97.5 * navScale, h: (NAV_HEIGHT - 7) * navH / NAV_HEIGHT });
     });
-    const pending = active === 'home' ? pendingDailyTaskCount(state) : 0;
+    const pending = pendingDailyTaskCount(state);
     if (pending) {
       this.box(247, y + 3, 55, 18, 9, C.coral);
       this.readableText(`待领 ${pending}`, 274.5, y + 12, 9, '#FFF', 'center', 'bold');
     }
+    this.ctx.restore();
   }
 
   navIcon(id, x, y, color, selected) {
@@ -1546,6 +1534,7 @@ export default class Scene {
   }
 
   drawAnimation(state, ui) {
+    if (ui.page === 'home' && state.active) { this.draw(state, ui); return; }
     const { sceneY, sceneH, ratio } = this.layout();
     let top = sceneY;
     let bottom = sceneY + sceneH;
@@ -1585,6 +1574,7 @@ export default class Scene {
   }
 
   draw(state, ui, coinWaysOffer = null) {
+    this.currentUi = ui;
     this.resize(); this.time = Date.now() / MILLISECONDS_PER_SECOND; this.buttons = [];
     this.pressedId = ui.pressedId || null;
     const c = this.ctx;

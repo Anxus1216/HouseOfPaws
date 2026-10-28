@@ -1,6 +1,8 @@
 export const LINEN_ASSET = 'assets/ui/linen-ivory.jpg';
 
 export const UI_SPRITES = Object.freeze({
+  'care-drawer-felt': 'assets/ui/drawers/care-drawer-felt.png',
+  'state-drawer-felt': 'assets/ui/drawers/state-drawer-felt.png',
   basket: 'assets/ui/basket-felt.png',
   star: 'assets/ui/star-felt.png',
   'care-feed-v2': 'assets/ui/care-feed-v2.png',

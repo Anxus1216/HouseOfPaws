@@ -82,10 +82,10 @@ test('home action dock shows each current reason on short and tall layouts', asy
     scene.resize();
     const labels = [];
     scene.readableText = (value, x, y) => labels.push({ value, x, y });
-    scene.homeActions(state, scene.homeLayout());
+    scene.homeActions(state, scene.homeGeometry());
     const captions = labels.filter(item => ['还差 1', '还差 1 爪爪币', '已干净', '先休息', '免费']
       .includes(item.value)).map(item => item.value);
-    assert.deepEqual(captions, [height === 568 ? '还差 1' : '还差 1 爪爪币',
+    assert.deepEqual(captions, ['还差 1',
       '已干净', '先休息', '免费']);
     assert.deepEqual(scene.buttons.map(button => button.id), ['feed', 'wash', 'play', 'rest']);
     const navY = scene.layout().navY;

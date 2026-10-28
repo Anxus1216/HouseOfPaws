@@ -32,12 +32,13 @@ test('blocked care remains colored and tappable with its pressed shade', () => {
   adopt(state, 'cat');
   state.pets.cat.hunger = 100;
   const circles = [];
-  view.box = () => {};
-  view.circle = (...args) => circles.push(args[3]);
+  view.box = (...args) => circles.push(args[5]);
+  view.circle = () => {};
   view.careIcon = () => {};
   view.readableText = () => {};
   view.pressedId = 'feed';
-  view.homeActions(state, { dockX: 30, dockY: 400, dockW: 330 });
+  view.resize();
+  view.homeActions(state, view.homeGeometry());
   assert.ok(circles.includes('#F4A38B'));
   assert.ok(view.buttons.some(button => button.id === 'feed'));
 });

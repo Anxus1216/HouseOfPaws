@@ -1,4 +1,5 @@
 import './render.js';
+import { createHomeDrawers, setDrawerOpen, finishHomeDrawers, homeDrawersAnimating, drawerProgress } from './home-drawers.js';
 import Scene from './scene.js';
 import { CARE_ACTIONS } from './care-actions.js';
 import { ACTION_SPEECH, FEEDBACK_MS } from './pet-display.js';
@@ -33,7 +34,7 @@ export default class Main {
     this.viewport = GameGlobal.viewport;
     this.scene.setViewport(this.viewport);
     this.state = this.load();
-    this.ui = { page: 'home', speech: '', toast: '', toastUntil: 0,
+    this.ui = { homeDrawers: createHomeDrawers(), page: 'home', speech: '', toast: '', toastUntil: 0,
       playing: false, paused: false, score: 0, remaining: 20, stars: [], basketX: 195,
       gameOutcome: null, quitConfirm: false,
       guideHoldUntil: 0, showSettings: false,
@@ -65,6 +66,7 @@ export default class Main {
     try { if (wx.onWindowResize) wx.onWindowResize(() => this.syncViewport()); }
     catch (error) { logWarn('viewport.resize_listener_failed', { message: String(error) }); }
     if (wx.onHide) wx.onHide(() => {
+      finishHomeDrawers(this.ui.homeDrawers);
       this.visible = false;
       this.cancelTouch();
       if (this.ui.playing) this.ui.paused = true;
@@ -102,6 +104,7 @@ export default class Main {
     this.viewportFieldChanged = fieldChanged;
     const oldField = this.ui.playing && fieldChanged ? this.scene.gameField() : null;
     if (fieldChanged) {
+      finishHomeDrawers(this.ui.homeDrawers);
       if (this.ui.playing) this.ui.paused = true;
       this.debugTouch = null;
       this.coinWayTouch = null;
@@ -370,6 +373,14 @@ export default class Main {
       this.ui.adviceExplanation = null;
       return;
     }
+    if (id === 'home_care_toggle' || id === 'home_status_toggle') {
+      const key = id === 'home_care_toggle' ? 'care' : 'status';
+      setDrawerOpen(this.ui.homeDrawers, key, !this.ui.homeDrawers[key].targetOpen);
+      this.cancelTouch();
+      this.needsDraw = true;
+      return;
+    }
+    if (id === 'home_panel') return;
     if (id === 'home_growth_help') {
       this.ui.showGrowthHelp = true;
       this.ui.adviceExplanation = null;
@@ -383,6 +394,7 @@ export default class Main {
     if (id === 'home_advice') {
       if (!this.ui.showHomeAdvice) return;
       const advice = homeAdvice(this.state);
+      if (advice?.action) setDrawerOpen(this.ui.homeDrawers, 'care', true);
       if (!advice) return;
       if (advice.kind === 'coins') {
         this.openCoinWays({ kind: 'care', action: advice.action });
@@ -482,6 +494,8 @@ export default class Main {
       return;
     }
     if (['feed', 'wash', 'play', 'rest'].includes(id)) {
+      if (!this.ui.homeDrawers.care.targetOpen ||
+          drawerProgress(this.ui.homeDrawers.care) < .999) return;
       this.ui.adviceExplanation = null;
       const now = Date.now();
       if (now - this.lastCareAt < 350) return;
@@ -816,15 +830,17 @@ export default class Main {
       this.ui.rewardHelp = null;
       this.needsDraw = true;
     }
+    const drawersAnimating = homeDrawersAnimating(this.ui.homeDrawers, now - dt * 1000) ||
+      homeDrawersAnimating(this.ui.homeDrawers, now);
     const wasAnimated = this.isAnimated();
     this.updateGame(dt);
     const guideAnimating = !!this.scene.visibleGuide(this.state, this.ui, now);
     const animated = wasAnimated || this.isAnimated() || guideAnimating;
     const gameAnimating = this.ui.page === 'game' && this.ui.playing;
-    if (this.visible && (this.needsDraw ||
+    if (this.visible && (this.needsDraw || drawersAnimating ||
         (animated && (gameAnimating ||
           now - this.lastAnimationDraw >= PET_ANIMATION_INTERVAL_MS)))) {
-      if (this.needsDraw || guideAnimating) this.draw();
+      if (this.needsDraw || guideAnimating || drawersAnimating) this.draw();
       else this.scene.drawAnimation(this.state, this.ui);
       this.lastAnimationDraw = now;
       this.needsDraw = false;

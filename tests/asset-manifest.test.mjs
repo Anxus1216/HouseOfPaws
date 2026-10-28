@@ -46,11 +46,11 @@ test('linen UI texture is packaged as a compact JPEG', () => {
 
 test('every UI sprite name resolves to a packaged image', () => {
   assert.deepEqual(Object.keys(UI_SPRITES).sort(), [
-    'basket', 'star', 'care-feed-v2', 'care-wash-v2', 'care-play-v2',
+    'care-drawer-felt', 'state-drawer-felt', 'basket', 'star', 'care-feed-v2', 'care-wash-v2', 'care-play-v2',
     'care-rest-v2', 'care-wash-front', 'care-rest-front', 'gift-felt-v2',
   ].sort());
   for (const [name, path] of Object.entries(UI_SPRITES)) {
-    assert.match(path, /^assets\/ui\/[^/]+\.png$/, `${name} has a UI image path`);
+    assert.match(path, /^assets\/ui\/(?:drawers\/)?[^/]+\.png$/, `${name} has a UI image path`);
     const bytes = readFileSync(fileURLToPath(new URL(`../${path}`, import.meta.url)));
     assert.deepEqual([...bytes.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10],
       `${name} resolves to a PNG`);

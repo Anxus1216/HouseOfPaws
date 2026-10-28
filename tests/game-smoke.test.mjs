@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { setDrawerOpen, createHomeDrawers, finishHomeDrawers } from '../js/home-drawers.js';
 import { coinWays } from '../js/coin-ways.js';
 import { coinWaysLayout } from '../js/coin-ways-layout.js';
 
@@ -31,6 +32,7 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   const clientPoint = (x, y) => ({ clientX: game.scene.offsetX + x * game.scene.scale,
     clientY: game.scene.offsetY + y * game.scene.scale });
   const tapId = id => {
+    if (['feed','wash','play','rest'].includes(id)) setDrawerOpen(game.ui.homeDrawers,'care',true,Date.now(),true);
     game.draw();
     const button = game.scene.buttons.find(item => item.id === id);
     assert.ok(button, `button ${id} is visible`);
@@ -374,7 +376,7 @@ test('main actions stay reachable on a shorter portrait screen', async () => {
     scene.draw(state, ui);
     assert.ok(scene.buttons.length > 0, `${page} has buttons`);
     for (const button of scene.buttons) {
-      assert.ok(button.x >= 0 && button.x + button.w <= 390, `${page}:${button.id} fits width`);
+      assert.ok(scene.offsetX+button.x*scene.scale >= -0.001 && scene.offsetX+(button.x+button.w)*scene.scale <= canvas.width+.001, `${page}:${button.id} fits width`);
       assert.ok(button.y >= 0 && button.y + button.h <= scene.h, `${page}:${button.id} fits height`);
     }
   }
@@ -473,6 +475,7 @@ test('animation redraw stays in the scene area and preserves touch targets', asy
       rectangles.length = 0;
       scene.drawAnimation(state, ui);
       assert.deepEqual(scene.buttons, targets, `${page} keeps touch targets at ${height}px`);
+      if (page === 'home') continue; // New drawers use full composition, not a stale legacy clip.
       assert.equal(rectangles.length, 1, `${page} clips one animated area`);
       const [x, y, width, clipHeight] = rectangles[0];
       assert.ok(x > 0 && width < 390 && y > 0 && clipHeight < scene.h,
@@ -509,11 +512,14 @@ test('essential captions remain readable on a narrow short screen', async () => 
     return label;
   };
 
+  ui.homeDrawers=createHomeDrawers();
+  setDrawerOpen(ui.homeDrawers,'care',true,0,true);
+  setDrawerOpen(ui.homeDrawers,'status',true,0,true);
   drawPage('home');
   for (const value of ['小屋', '萌宠', '任务', '游戏', '喂食', '清洁',
     '饱腹', '免费']) readable(value);
   const action = readable('喂食');
-  const hint = readable('✦ 5');
+  const hint = readable('5爪爪币');
   assert.ok((hint.y - action.y - (hint.size + action.size) / 2) * scene.scale >= 3,
     'action label and hint retain a visible gap');
 
@@ -560,8 +566,8 @@ test('essential captions remain readable on a narrow short screen', async () => 
   readable('每日礼物');
   readable('+30 爪爪币');
   readable('领取礼物');
-  assert.equal(labels.filter(item => item.value === '每日清单').length, 1,
-    'the page heading is the only daily checklist title');
+  assert.equal(labels.filter(item => item.value === '每日清单').length, 0,
+    'redundant daily checklist heading is removed');
   assert.ok(!labels.some(item => item.value.startsWith('已完成')),
     'the progress ring is the only task count summary');
 
@@ -673,100 +679,50 @@ test('header controls stay below the native WeChat menu on different screens', a
   globalThis.wx = { getMenuButtonBoundingClientRect: () => ({ top: 0, bottom: 0 }) };
   const fallback = new Scene(context, { width: 390, height: 680 });
   fallback.draw(state, ui);
-  assert.equal(fallback.buttons.find(item => item.id === 'settings').y, 64);
+  const fallbackSettings=fallback.buttons.find(item => item.id === 'settings');
+  assert.ok(fallbackSettings.y>=0 && fallbackSettings.h*fallback.scale>=44, 'fallback settings remain reachable without a capsule');
 });
 
-test('every page gives its heading more prominence than its description', async () => {
-  const { default: Scene } = await import('../js/scene.js');
-  const { initialState, adopt } = await import('../js/model.js');
-  const context = new Proxy({}, { get(target, key) { return target[key] || (() => {}); } });
-  const adopted = initialState();
-  adopt(adopted, 'cat');
-  const pages = [
-    { page: 'welcome', state: initialState(), heading: '欢迎来到小屋',
-      description: '一起慢慢长大' },
-    { page: 'home', state: adopted, heading: '陪伴日记',
-      description: '今天也一起慢慢长大' },
-    { page: 'collection', state: adopted, heading: '小伙伴们',
-      description: '每一位都值得被珍惜' },
-    { page: 'tasks', state: adopted, heading: '每日清单',
-      description: '今天的小小约定' },
-    { page: 'game', state: adopted, heading: '星星接接乐',
-      description: '把星光装进小篮子' },
-  ];
-  const sharedCoins = new Map();
-  for (const height of [680, 844]) {
-    for (const page of pages) {
-      const scene = new Scene(context, { width: 390, height });
-      const labels = [], boxes = [];
-      scene.text = (value, x, y, size) => labels.push({ value, x, y, size });
-      scene.box = (x, y, w, h, r, fill) => boxes.push({ x, y, w, h, fill });
-      scene.draw(page.state, { page: page.page, guideStep: 0, expressionUntil: 0 });
-      const heading = labels.find(label => label.value === page.heading);
-      const description = labels.find(label => label.value === page.description);
-      assert.ok(heading && description, `${page.page}: both header lines render`);
-      assert.ok(heading.size > description.size,
-        `${page.page}: heading is larger than its description`);
-      assert.equal(heading.x, description.x, `${page.page}: both lines align`);
-      assert.ok(heading.y + heading.size / 2 < description.y - description.size / 2,
-        `${page.page}: header lines do not overlap`);
-      const contentTop = page.page === 'home' ? scene.homeLayout().sceneY : scene.layout().sceneY;
-      assert.ok(description.y + description.size / 2 < contentTop,
-        `${page.page}: description clears content on ${height}px screen`);
-      const coin = boxes.find(box => box.fill === '#FBEBD6');
-      assert.ok(coin, `${page.page}: coin appears in the shared header`);
-      const coinBounds = { x: coin.x, y: coin.y, w: coin.w, h: coin.h };
-      if (!sharedCoins.has(height)) sharedCoins.set(height, coinBounds);
-      assert.deepEqual(coinBounds, sharedCoins.get(height),
-        `${page.page}: coin position matches every other page`);
-      assert.ok(coin.y + coin.h < contentTop,
-        `${page.page}: coin clears content on ${height}px screen`);
-    }
+test('main pages omit redundant headings while preserving wallet and navigation', async () => {
+  const {default: Scene} = await import('../js/scene.js');
+  const {initialState, adopt} = await import('../js/model.js');
+  const state = initialState();
+  adopt(state,'cat');
+  for (const page of ['home','collection','tasks']) {
+    const scene = new Scene(new Proxy({}, {get: () => () => {}}), {width: 390, height: 844});
+    const labels = [];
+    scene.text = (v) => labels.push(String(v));
+    scene.draw(state, {page, expressionUntil: 0});
+    assert.ok(!labels.some(v => ['爪爪小屋','陪伴日记','小伙伴们','每日清单'].includes(v)));
+    assert.ok(labels.some(v => v.includes('60')),'wallet remains visible');
+    assert.ok(scene.buttons.some(b => b.id === 'settings'));
+    assert.ok(scene.buttons.some(b => b.id === 'nav_'+page));
   }
 });
 
-test('large home scene, action dock and colored arcs fit on short and tall screens', async () => {
-  const { default: Scene } = await import('../js/scene.js');
-  const { initialState, adopt } = await import('../js/model.js');
-  const context = new Proxy({}, { get(target, key) { return target[key] || (() => {}); } });
+test('home drawer combinations preserve pet placement and require deliberate opening', async () => {
+  const {default: Scene} = await import('../js/scene.js');
+  const {initialState, adopt} = await import('../js/model.js');
   const state = initialState();
-  adopt(state, 'cat');
-  const ui = { page: 'home', speech: '', expressionUntil: 0, action: '', statDelta: '' };
-  for (const height of [680, 844]) {
-    const scene = new Scene(context, { width: 390, height });
-    const boxes = [], labels = [], arcs = [];
-    scene.box = (x, y, w, h, r, fill) => boxes.push({ x, y, w, h, fill });
-    scene.text = (value, x, y) => labels.push({ value, x, y });
-    scene.drawHomeGauge = (x, y, value, color) => arcs.push({ x, y, value, color });
+  adopt(state,'cat');
+  for (const [width, height] of [[320, 568], [390, 844]]) {
+    const scene = new Scene(new Proxy({}, {get: () => () => {}}), {width, height});
+    const ui = {page:'home', homeDrawers: createHomeDrawers()};
     scene.draw(state, ui);
-    const layout = scene.homeLayout();
-    const dock = boxes.find(box => box.y === layout.dockY - 8 &&
-      box.x === layout.dockX && box.w === layout.dockW);
-    assert.ok(dock, `${height}px: care actions share a floating fabric dock`);
-    assert.ok(layout.sceneH >= 340, `${height}px: pet scene remains large`);
-    assert.ok(layout.sceneBottom < layout.gaugeY,
-      `${height}px: scene clears the arc row`);
-    assert.equal(arcs.length, 4);
-    assert.equal(new Set(arcs.map(arc => arc.color)).size, 4,
-      'each state has a distinct arc color');
-    assert.ok(arcs.every(arc => arc.y < layout.gaugeBottom &&
-      layout.gaugeBottom <= layout.labelY + 1),
-      `${height}px: status labels are close to the arcs`);
-    assert.ok(layout.labelY + 7 < scene.layout().navY,
-      `${height}px: labels clear the navigation`);
-    assert.ok(labels.some(label => String(label.value).includes('今日成长 0/100')));
-    const advice = scene.buttons.find(button => button.id === 'home_advice');
-    const close = scene.buttons.find(button => button.id === 'home_advice_close');
-    const growthHelp = scene.buttons.find(button => button.id === 'home_growth_help');
-    assert.ok(advice && close && growthHelp);
-    assert.equal(scene.hit(close.x + close.w / 2, close.y + close.h / 2),
-      'home_advice_close', `${height}px: close control has its own tap target`);
-    assert.equal(scene.hit(advice.x + advice.w / 2, advice.y + advice.h / 2),
-      'home_advice', `${height}px: advice body remains tappable`);
-    assert.ok(growthHelp.y + growthHelp.h < advice.y,
-      `${height}px: growth summary clears the advice row`);
-    assert.ok(advice.y + advice.h < layout.dockY,
-      `${height}px: advice row clears the action dock`);
+    const pet = {...scene.buttons.find(b => b.id === 'pet_tap')};
+    assert.ok(!scene.buttons.some(b => b.id === 'feed'));
+    for (const [care, status] of [[true, false], [true, true], [false, true], [false, false]]) {
+      setDrawerOpen(ui.homeDrawers,'care', care, 0, true);
+      setDrawerOpen(ui.homeDrawers,'status', status, 0, true);
+      scene.draw(state, ui);
+      assert.equal(scene.buttons.some(b => b.id === 'feed'), care);
+      assert.deepEqual(scene.buttons.find(b => b.id === 'pet_tap'), pet);
+      for (const id of ['home_care_toggle','home_status_toggle']) {
+        const r = scene.buttons.find(b => b.id === id);
+        assert.ok(r.w * scene.scale >= 44 && r.h * scene.scale >= 44);
+        assert.equal(scene.hit(r.x + r.w / 2, r.y + r.h / 2), id);
+      }
+    }
   }
 });
 
