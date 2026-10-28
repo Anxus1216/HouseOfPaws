@@ -16,6 +16,8 @@ export function mergeCareFeedback(previous, entry) {
     growth: base.growth + entry.growth,
     cost: base.cost + entry.cost,
     bonus: base.bonus + entry.bonus,
+    zeroBonusUpgrades: (base.zeroBonusUpgrades || 0) +
+      (entry.leveled && entry.bonus === 0 ? 1 : 0),
     level: entry.level,
     leveled: !!entry.leveled || (continuing && previous.leveled),
     growthReason: entry.growthReason || null,
@@ -32,7 +34,11 @@ export function careFeedbackTokens(feedback) {
   const rewards = [];
   if (feedback.growth) rewards.push(`成长 +${feedback.growth}`);
   if (feedback.cost) rewards.push(`爪爪币 -${feedback.cost}`);
-  if (feedback.bonus) rewards.push(`升级返币 +${feedback.bonus}`);
+  if (feedback.bonus) rewards.push(`${feedback.zeroBonusUpgrades ? '累计升级返币' : '升级返币'} +${feedback.bonus}`);
+  if (feedback.zeroBonusUpgrades) {
+    rewards.push(feedback.count === 1 ? '钱包已满，升级返币 0' :
+      `钱包已满，${feedback.zeroBonusUpgrades}次升级返币 0`);
+  }
   if (feedback.growthReason && !feedback.growth) rewards.push(feedback.growthReason);
   if (feedback.leveled) rewards.push(`升到 Lv.${feedback.level} 啦`);
   return { changes, rewards };
