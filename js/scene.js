@@ -814,9 +814,9 @@ export default class Scene {
       const contentTop = r.y + layout.statusEntry.h;
       const rowHeight = (r.h - layout.statusEntry.h) / HOME_STATS.length;
       HOME_STATS.forEach((stat, index) => {
-        const y = contentTop + index * rowHeight;
-        this.drawHomeGauge(r.x + r.w / 2, y + 25 * unit, pet[stat.field], stat.color, unit);
-        this.readableText(stat.label, r.x + r.w / 2, y + 36 * unit, 11, C.brown,'center', 'bold');
+        const y = contentTop + (index + .5) * rowHeight + 2 * unit;
+        this.drawHomeGauge(r.x + r.w / 2, y, pet[stat.field], stat.color, unit);
+        this.readableText(stat.label, r.x + r.w / 2, y + 11 * unit, 11, C.brown,'center', 'bold');
       });
     });
     drawClipped(layout.carePanel, care, false, () => {
