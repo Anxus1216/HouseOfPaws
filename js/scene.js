@@ -54,6 +54,8 @@ const EXPANDED_LAYOUT_HEIGHT = 844;
 const GAME_FIELD_COMPACT_HEIGHT = 356;
 const NAV_HEIGHT = 64;
 const MIN_CLOSE_HIT_SIZE_PX = 44;
+// Match the short-screen drawer text; its arc and spacing also use window pixels.
+const HOME_STATUS_FONT_SIZE_PX = 11;
 const HOME_STATS = Object.freeze([
   { label: '饱腹', field: 'hunger', color: '#F3A34D' },
   { label: '清洁', field: 'clean', color: '#58AA9B' },
@@ -760,7 +762,8 @@ export default class Scene {
       c.strokeStyle = color; c.stroke();
     }
     c.restore();
-    this.readableText(`${Math.round(value)}%`, x, centerY - 5 * unit, 13, C.ink, 'center', 'bold');
+    this.text(`${Math.round(value)}%`, x, centerY - 5 * unit,
+      HOME_STATUS_FONT_SIZE_PX * unit, C.ink, 'center', 'bold');
   }
 
   home(state, ui) {
@@ -806,7 +809,8 @@ export default class Scene {
       HOME_STATS.forEach((stat, index) => {
         const y = contentTop + index * rowHeight;
         this.drawHomeGauge(r.x + r.w / 2, y + 25 * unit, pet[stat.field], stat.color, unit);
-        this.readableText(stat.label, r.x + r.w / 2, y + 36 * unit, 11, C.brown,'center', 'bold');
+        this.text(stat.label, r.x + r.w / 2, y + 36 * unit,
+          HOME_STATUS_FONT_SIZE_PX * unit, C.brown,'center', 'bold');
       });
     });
     drawClipped(layout.carePanel, care, false, () => {

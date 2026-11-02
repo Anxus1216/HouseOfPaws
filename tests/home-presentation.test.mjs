@@ -38,7 +38,7 @@ test('status drawer renders four original semicircular gauges with clamped color
   context.arc = (...args) => arcs.push(args);
   const scene = new Scene(context, { width: 320, height: 568 });
   const labels = [];
-  scene.readableText = (...args) => labels.push(args);
+  scene.text = (...args) => labels.push(args);
   for (const [value, progressCount] of [[0, 0], [50, 1], [100, 1]]) {
     arcs.length = 0;
     scene.drawHomeGauge(100, 200, value, '#58AA9B', 1);
