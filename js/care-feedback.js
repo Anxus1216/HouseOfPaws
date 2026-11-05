@@ -43,12 +43,3 @@ export function careFeedbackTokens(feedback) {
   if (feedback.leveled) rewards.push(`升到 Lv.${feedback.level} 啦`);
   return { changes, rewards };
 }
-
-export function lowStateSummary(pet, advice) {
-  if (!pet || !advice || advice.kind === 'pet') return '';
-  const field = advice.field;
-  if (!field) return '';
-  const actionLabel = { rest: '先休息', feed: '先喂食', wash: '先清洁', play: '陪它玩耍' }[advice.action];
-  const next = advice.kind === 'coins' ? `还差${advice.missing}爪爪币` : actionLabel;
-  return `${STAT_NAMES[field]}${Math.round(pet[field])}% · ${next}`;
-}

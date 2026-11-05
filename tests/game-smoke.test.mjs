@@ -850,7 +850,7 @@ test('pet expression, action and bubble switch together when feedback ends', asy
     expression: 'sleepy', action: 'rest', speech: '休息中，补充精力～', statDelta: '+27 精力',
   });
   assert.deepEqual(petDisplay(pet, ui, 4000), {
-    expression: 'need', action: '', speech: '肚子饿啦，想吃点东西', statDelta: '',
+    expression: 'need', action: '', speech: '肚子饿啦，想吃点东西', statDelta: '', need: 'hunger',
   });
   pet.hunger = 80;
   pet.energy = 27;

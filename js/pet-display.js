@@ -20,7 +20,7 @@ export function petDisplay(pet, ui, now = Date.now()) {
   const lowest = ['hunger', 'clean', 'happy', 'energy']
     .reduce((key, next) => pet[next] < pet[key] ? next : key);
   if (pet[lowest] < 25) {
-    return { expression: 'need', action: '', speech: NEED_SPEECH[lowest], statDelta: '' };
+    return { expression: 'need', action: '', speech: NEED_SPEECH[lowest], statDelta: '', need: lowest };
   }
   if (pet.energy < 29) {
     return { expression: 'sleepy', action: '', speech: '有点困啦', statDelta: '' };

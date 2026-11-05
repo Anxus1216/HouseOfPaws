@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeCareFeedback, careFeedbackTokens, lowStateSummary } from '../js/care-feedback.js';
+import { mergeCareFeedback, careFeedbackTokens } from '../js/care-feedback.js';
+import { homeAdvice, homeAdviceDetail } from '../js/home-advice.js';
 import { initialState, adopt, care, MAX_COINS } from '../js/model.js';
-import { homeAdvice } from '../js/home-advice.js';
 import Scene from '../js/scene.js';
 
 const entry = (extra = {}) => ({
@@ -68,32 +68,35 @@ test('real full-wallet upgrades retain zero-bonus explanations throughout mixed 
   assert.ok(careFeedbackTokens(feedback).rewards.includes('钱包已满，2次升级返币 0'));
 });
 
-test('low summary uses the selected advice field including its prerequisite', () => {
-  const state = initialState();
-  adopt(state, 'cat');
-  Object.assign(state.pets.cat, { energy: 28, happy: 18, hunger: 80, clean: 80 });
-  const advice = homeAdvice(state);
-  assert.equal(advice.action, 'rest');
-  assert.equal(lowStateSummary(state.pets.cat, advice), '心情18% · 先休息');
-});
-
-test('low status remains visible after dismissing normal advice and after successful care', () => {
+test('low cleanliness shows the pet speech without a second advice line', () => {
   const state = initialState();
   adopt(state, 'cat');
   state.guide.phase = 'skipped';
-  state.pets.cat.energy = 18;
-  const context = new Proxy({}, { get: () => () => {} });
-  const view = new Scene(context, { width: 320, height: 568 });
-  const labels = [];
-  view.readableText = value => labels.push(String(value));
-  view.draw(state, { page: 'home', showHomeAdvice: false });
-  assert.ok(labels.includes('精力18% · 先休息'));
-  labels.length = 0;
-  view.draw(state, { page: 'home', showHomeAdvice: false,
-    careFeedback: mergeCareFeedback(null, entry({ now: Date.now() })) });
-  assert.ok(labels.includes('精力18% · 先休息'));
-  assert.ok(labels.some(label => label.includes('清洁 +5')));
-  assert.ok(!view.buttons.some(button => button.id === 'home_advice_close'));
+  Object.assign(state.pets.cat, { clean: 9, hunger: 80, happy: 80, energy: 80 });
+  const now = Date.now();
+  for (const [width, height] of [[320, 568], [390, 844]]) {
+    const view = new Scene(new Proxy({}, { get: () => () => {} }), { width, height });
+    const bounds = view.homeGeometry().feedback;
+    const lines = [];
+    view.readableText = (value, x, y) => {
+      if (x >= bounds.x && x < bounds.x + bounds.w && y >= bounds.y && y < bounds.y + bounds.h) {
+        lines.push(value);
+      }
+    };
+    view.draw(state, { page: 'home', frameNow: now });
+    assert.deepEqual(lines, ['想洗个澡啦']);
+    assert.ok(view.buttons.some(button => button.id === 'home_advice'));
+    lines.length = 0;
+    const compactDetail = homeAdviceDetail(homeAdvice(state), true);
+    view.draw(state, { page: 'home', frameNow: now,
+      adviceExplanation: { until: now + 1000, compactDetail } });
+    assert.deepEqual(lines, ['可以点下方「清洁」']);
+    lines.length = 0;
+    state.pets.cat.energy = 18;
+    view.draw(state, { page: 'home', frameNow: now });
+    assert.deepEqual(lines, ['它有点累了，歇一会儿吧']);
+    state.pets.cat.energy = 80;
+  }
 });
 
 test('longest result, low status, failed save and a later rejected action stay within reserved bounds', () => {
@@ -122,7 +125,6 @@ test('longest result, low status, failed save and a later rejected action stay w
     assert.ok(panel);
     assert.ok(panel.y >= bounds.y - 1e-9, 'feedback stays inside its upper scene carrier');
     assert.ok(panel.y + panel.h <= bounds.y + bounds.h + 1e-9);
-    assert.ok(labels.includes('精力18% · 先休息'));
     assert.ok(labels.includes('照料已生效，尚未成功保存'));
     if (reason) {
       assert.ok(labels.includes(reason.text), 'a later rejection takes the explanation carrier');
@@ -165,7 +167,6 @@ test('mixed zero-bonus upgrade notes fit above the centered pet face with low st
       'even the longest result ends above the centered face');
     assert.ok(labels.join('').includes('累计升级返币 +30'));
     assert.ok(labels.join('').includes('钱包已满，2次升级返币 0'));
-    assert.ok(labels.includes('精力18% · 先休息'));
     assert.ok(labels.includes('照料已生效，尚未成功保存'));
   }
 });

@@ -14,7 +14,7 @@ import { PET_FIELDS } from './debug-editor.js';
 import { readViewport } from './viewport.js';
 import { gameIdleLayout } from './game-idle-layout.js';
 import { logInfo, logWarn, logError } from './logger.js';
-import { careFeedbackTokens, lowStateSummary } from './care-feedback.js';
+import { careFeedbackTokens } from './care-feedback.js';
 import { computeHomeLayout } from './home-layout.js';
 import { drawerProgress } from './home-drawers.js';
 import { LINEN_ASSET, UI_SPRITES } from './ui-assets.js';
@@ -859,16 +859,19 @@ export default class Scene {
     const unit = layout.unit;
     const bounds = layout.feedback;
     const pet = state.pets[state.active];
-    const advice = homeAdvice(state);
-    const summary = lowStateSummary(pet, advice);
     const feedback = ui.careFeedback?.petId === pet.id && ui.careFeedback.until > now ? ui.careFeedback : null;
     const reason = ui.careReason?.until > now ? ui.careReason.displayText || ui.careReason.text : '';
-    const showAdvice = summary || (ui.showHomeAdvice !== false && (!guide || guide.phase === 'outro'));
-    if (!feedback && !reason && !showAdvice && !display.statDelta && !display.speech && !ui.persistenceWarning) return;
+    const showAdvice = ui.showHomeAdvice !== false && (!guide || guide.phase === 'outro');
+    const advice = showAdvice ? homeAdvice(state) : null;
+    const explaining = showAdvice && ui.adviceExplanation?.until > now;
+    const matchingSpeech = !display.need || !advice?.action ||
+      (advice.kind === 'care' && CARE_ACTIONS[advice.action].target === display.need);
+    const showSpeech = display.speech && matchingSpeech && !(explaining && advice?.action);
+    const showAdviceText = showAdvice && (!advice?.action || !showSpeech);
+    if (!feedback && !reason && !showAdvice && !display.statDelta && !showSpeech && !ui.persistenceWarning) return;
     const lines = [];
     const contentWidth = bounds.w - 16 * unit;
-    // Speech shares the upper carrier so advice cannot paint over a pet's response.
-    if (display.speech && !feedback && !reason)
+    if (showSpeech && !feedback && !reason)
       lines.push(...this.wrapText(display.speech, contentWidth));
     if (reason) {
       lines.push(...this.wrapText(reason, contentWidth));
@@ -880,12 +883,10 @@ export default class Scene {
       lines.push(...this.wrapText(rewards, contentWidth));
     } else if (display.statDelta) {
       lines.push(...display.statDelta.split('|').flatMap(line => this.wrapText(line, contentWidth)));
-    } else if (!summary && showAdvice) {
-      const explaining = ui.adviceExplanation?.until > now;
+    } else if (showAdviceText) {
       const text = explaining ? ui.adviceExplanation.compactDetail : homeAdviceText(advice, true);
       lines.push(...this.wrapText(text, contentWidth - 44 * unit));
     }
-    if (summary) lines.push(summary);
     if (ui.persistenceWarning) lines.push(feedback ? '照料已生效，尚未成功保存' : ui.persistenceWarning);
     const height = Math.max(44, lines.length * 14 + 12) * unit;
     const top = bounds.y;
@@ -897,8 +898,8 @@ export default class Scene {
       this.buttons.push({ id: 'home_panel', x: bounds.x, y: top, w: bounds.w, h: height });
     } else {
       this.buttons.push({ id: 'home_advice', x: bounds.x, y: top,
-        w: bounds.w - (summary ? 0 : 44 * unit), h: height });
-      if (!summary) {
+        w: bounds.w - (showAdviceText ? 44 * unit : 0), h: height });
+      if (showAdviceText) {
         this.text('×', bounds.x + bounds.w - 22 * unit, top + height / 2, 17, C.muted, 'center');
         this.buttons.push({ id: 'home_advice_close', x: bounds.x + bounds.w - 44 * unit,
           y: top, w: 44 * unit, h: height });

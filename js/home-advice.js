@@ -15,12 +15,12 @@ export function homeAdvice(state) {
     if (!need) continue;
     const block = careBlock(state, need.action);
     if (block?.kind === 'energy_low') {
-      return { kind: 'care', action: 'rest', field: need.field, name: pet.name, prerequisite: true };
+      return { kind: 'care', action: 'rest', name: pet.name, prerequisite: true };
     }
     if (block?.kind === 'insufficient_coins') {
-      return { kind: 'coins', action: need.action, field: need.field, name: pet.name, missing: block.missing };
+      return { kind: 'coins', action: need.action, name: pet.name, missing: block.missing };
     }
-    return { kind: 'care', action: need.action, field: need.field, name: pet.name };
+    return { kind: 'care', action: need.action, name: pet.name };
   }
   return { kind: 'pet', name: pet.name };
 }
@@ -42,5 +42,6 @@ export function homeAdviceDetail(advice, compact = false) {
   if (advice?.prerequisite) return `可以先点「休息」，等${name}恢复精力再玩`;
   if (advice?.kind === 'pet') return `可以轻点${name}，陪它互动一下`;
   const labels = { feed: '喂食', wash: '清洁', play: '玩耍', rest: '休息' };
-  return `想照料${name}，可以点下方「${labels[advice.action]}」`;
+  const action = labels[advice.action];
+  return compact ? `可以点下方「${action}」` : `想照料${name}，可以点下方「${action}」`;
 }
