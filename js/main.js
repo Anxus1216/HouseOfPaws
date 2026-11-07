@@ -419,6 +419,10 @@ export default class Main {
       this.ui.adviceExplanation = null;
       return;
     }
+    if (id === 'profile_tasks' || id === 'profile_home') {
+      this.requestPage(id === 'profile_tasks' ? 'tasks' : 'home');
+      return;
+    }
     if (id === 'home_care_toggle' || id === 'home_status_toggle') {
       const key = id === 'home_care_toggle' ? 'care' : 'status';
       setDrawerOpen(this.ui.homeDrawers, key, !this.ui.homeDrawers[key].targetOpen);

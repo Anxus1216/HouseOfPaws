@@ -911,12 +911,12 @@ export default class Scene {
     const geometry = this.homeGeometry();
     const { x: navX, y: navY, w: navW, h: navH } = geometry.nav;
     const unit = geometry.unit;
-    const columnWidth = navW / 4;
+    const columnWidth = navW / 5;
     this.box(navX, navY - unit, navW, navH + unit, 0, C.paper);
     this.linenOverlay(navX, navY, navW, navH, 0, .55);
     this.line([[navX, navY], [navX + navW, navY]], FABRIC.edge, unit);
     [['home', '小屋'], ['collection', '萌宠'],
-      ['tasks', '任务'], ['game', '游戏']].forEach((item, i) => {
+      ['tasks', '任务'], ['game', '游戏'], ['profile', '我的']].forEach((item, i) => {
       const x = navX + i * columnWidth;
       const centerX = x + columnWidth / 2;
       const selected = active === item[0];
@@ -939,7 +939,7 @@ export default class Scene {
     });
     const pending = pendingDailyTaskCount(state);
     if (pending) {
-      const badgeX = navX + columnWidth * 2.5 + 31 * unit;
+      const badgeX = navX + columnWidth * 2.5;
       this.box(badgeX - 27.5 * unit, navY + 3 * unit, 55 * unit, 18 * unit, 9 * unit, C.coral);
       this.text(`待领 ${pending}`, badgeX, navY + 12 * unit, 11 * unit, '#FFF', 'center', 'bold');
     }
@@ -972,6 +972,10 @@ export default class Scene {
       this.roundedPath(-10, -11, 20, 22, 3);
       if (selected) c.fill(); else c.stroke();
       this.line([[-5, 0], [-1, 4], [6, -4]], selected ? '#FFF9F0' : color, 2);
+    } else if (id === 'profile') {
+      this.circle(0, -5, 5, selected ? color : C.paper, color, 2);
+      this.curve(-11, 11, -11, 0, 0, 0, color, 2);
+      this.curve(0, 0, 11, 0, 11, 11, color, 2);
     } else {
       c.beginPath(); c.moveTo(-11, -5);
       c.quadraticCurveTo(-9, -10, -3, -9); c.lineTo(3, -9);
@@ -1046,6 +1050,53 @@ export default class Scene {
         { disabled: selected, variant: owned ? 'secondary' : 'primary' });
     });
 
+  }
+
+  profile(state) {
+    const layout = this.homeGeometry();
+    const top = layout.identity.y;
+    const { ratio } = this.layout();
+    const pet = state.pets[state.active];
+    this.text('我的', 20, top + 27, 25, C.ink, 'left', 'bold');
+    const settings = layout.settings;
+    const unit = layout.unit;
+    this.circle(settings.x + settings.w / 2, settings.y + settings.h / 2, 20 * unit,
+      this.pressedId === 'settings' ? PRESS.icon : '#F8EFE5');
+    this.text('⚙', settings.x + settings.w / 2, settings.y + settings.h / 2,
+      20, C.brown, 'center');
+    this.buttons.push({ id: 'settings', ...settings });
+
+    const profileY = top + 57;
+    const profileH = 104 + 36 * ratio;
+    this.fabricPanel(20, profileY, 350, profileH, 19, C.paper, true);
+    this.circle(66, profileY + profileH / 2, 29, '#E8F1E7', '#AAC9B9', 1);
+    this.circle(66, profileY + profileH / 2 - 8, 7, '#55A08D');
+    this.curve(52, profileY + profileH / 2 + 14, 66,
+      profileY + profileH / 2 - 2, 80, profileY + profileH / 2 + 14, '#55A08D', 5);
+    this.readableText('本地档案', 104, profileY + 30, 10, C.muted);
+    this.text('本机玩家', 104, profileY + 53, 18, C.ink, 'left', 'bold');
+    this.readableText(`已领养 ${Object.keys(state.pets).length} 只 · 照料 ${state.totalActions} 次`,
+      104, profileY + 76, 11, C.brown);
+
+    const walletY = profileY + profileH + 14;
+    this.text('爪爪币', 22, walletY - 1, 14, C.ink, 'left', 'bold');
+    this.fabricPanel(20, walletY + 10, 350, 76, 18, C.peach, true);
+    this.readableText('当前余额', 39, walletY + 33, 10, C.muted);
+    this.text(`✦ ${state.coins}`, 39, walletY + 64, 26, C.brown, 'left', 'bold');
+    this.button('profile_tasks', 253, walletY + 30, 101, 36,
+      '去做任务 ›', '#E3F0E9', '#3B8879', '#ADD2BD', 11);
+
+    const petY = walletY + 110;
+    const petH = 118 + 28 * ratio;
+    this.text('正在陪伴', 22, petY - 1, 14, C.ink, 'left', 'bold');
+    this.fabricPanel(20, petY + 10, 350, petH, 18, '#F1F5EA', true);
+    const petSize = Math.min(.43, (petH - 12) / 300);
+    this.pet(pet.id, 88, petY + petH / 2 + 25, petSize, this.time);
+    this.readableText('我的小伙伴', 177, petY + 40, 10, C.muted);
+    this.text(this.fitText(pet.name, 158, 18), 177, petY + 64,
+      18, C.ink, 'left', 'bold');
+    this.button('profile_home', 177, petY + petH - 32, 118, 30,
+      '回小屋 ›', C.paper, C.brown, FABRIC.edge, 11);
   }
 
   adoptionConfirm(state, speciesId) {
@@ -1713,6 +1764,7 @@ export default class Scene {
     else if (ui.page === 'collection') this.collection(state);
     else if (ui.page === 'tasks') this.tasks(state);
     else if (ui.page === 'game') this.game(state, ui);
+    else if (ui.page === 'profile') this.profile(state);
     else this.home(state, ui);
   }
 

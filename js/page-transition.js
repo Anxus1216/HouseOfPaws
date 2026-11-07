@@ -1,5 +1,5 @@
 export const PAGE_TRANSITION_DURATION_MS = 180;
-const MAIN_PAGES = new Set(['home', 'collection', 'tasks', 'game']);
+const MAIN_PAGES = new Set(['home', 'collection', 'tasks', 'game', 'profile']);
 
 export function createTransition(page = 'home', options = {}) {
   const initialPage = MAIN_PAGES.has(page) ? page : 'home';

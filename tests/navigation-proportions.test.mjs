@@ -25,12 +25,12 @@ test('navigation icons and text keep uniform window scale on short, tall and den
       adopt(state, 'cat');
       state.tasks.progress.care = 3;
       scene.nav('home', state);
-      assert.equal(icons.length, 4);
+      assert.equal(icons.length, 5);
       for (const icon of icons) {
         assert.ok(Math.abs(icon.x - icon.y) < 1e-9, 'icons never stretch vertically');
         assert.ok(Math.abs(icon.x - density) < 1e-9, 'icon dimensions use window pixels');
       }
-      for (const value of ['小屋', '萌宠', '任务', '游戏', '待领 1']) {
+      for (const value of ['小屋', '萌宠', '任务', '游戏', '我的', '待领 1']) {
         const label = labels.find(item => item.value === value);
         assert.ok(label, value);
         assert.ok(Math.abs(label.x - label.y) < 1e-9, 'glyphs never stretch');
@@ -40,7 +40,7 @@ test('navigation icons and text keep uniform window scale on short, tall and den
       const nav = scene.homeGeometry().nav;
       for (const [index, target] of scene.buttons.entries()) {
         assert.ok(target.w * scene.scale >= 44 && target.h * scene.scale >= 44);
-        assert.ok(Math.abs(target.x - nav.x - index * nav.w / 4) < 1e-9);
+        assert.ok(Math.abs(target.x - nav.x - index * nav.w / 5) < 1e-9);
         assert.equal(scene.hit(target.x + target.w / 2, target.y + target.h / 2), target.id);
       }
     }
