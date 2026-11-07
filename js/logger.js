@@ -17,5 +17,8 @@ export function logInfo(event, details) {
   if (DEBUG_ENABLED) write('info', event, details);
 }
 
+// Consent outcomes must remain observable in release builds without logging personal data.
+export function logEvent(event, details) { write('info', event, details); }
+
 export function logWarn(event, details) { write('warn', event, details); }
 export function logError(event, details) { write('error', event, details); }

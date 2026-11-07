@@ -17,7 +17,9 @@ import { careGrowthFeedback } from './growth-info.js';
 import { completedGameOutcome } from './game-result.js';
 import { rewardSpaceHelp } from './reward-presentation.js';
 import { guideInteractionResponse, reconcileGuide, recordGuideEvent, recordDrawerGuideEvent } from './guide.js';
-import { logInfo, logWarn, logError } from './logger.js';
+import { logInfo, logEvent, logWarn, logError } from './logger.js';
+import { PLAYER_PROFILE_KEY, normalizePlayerProfile, cachedPlayerProfile,
+  playerProfileRecord, authorizationOutcome } from './player-profile.js';
 import { SPECIES, STORAGE_KEY, hydrate, adopt, care, daily, miniReward,
   ensureTasks, recordTask, claimTask, taskClaimState, giftClaimState, dayKey, settleTime,
   SAVE_VERSION, petCardState, selectPet,
@@ -37,7 +39,9 @@ export default class Main {
     this.viewport = GameGlobal.viewport;
     this.scene.setViewport(this.viewport);
     this.state = this.load();
+    this.cachedPlayerProfile = this.loadPlayerProfile();
     this.ui = { pageTransition: createTransition('home', { durationMs: options.transitionDurationMs }), careFeedback: null, careReason: null, persistenceWarning: null, homeDrawers: createHomeDrawers(), page: 'home', speech: '', toast: '', toastUntil: 0,
+      playerProfile: null, profileAuthAvailable: typeof wx.createUserInfoButton === 'function',
       playing: false, paused: false, score: 0, remaining: 20, stars: [], basketX: 195,
       gameOutcome: null, quitConfirm: false,
       guideHoldUntil: 0, showSettings: false,
@@ -55,6 +59,12 @@ export default class Main {
     this.coinWayTouch = null;
     this.pressExpiresAt = 0;
     this.sounds = {};
+    this.profileAuthButton = null;
+    this.profileAuthListener = null;
+    this.profileAuthRect = '';
+    this.profileAuthHidden = false;
+    this.profileButtonCreateFailed = false;
+    this.profileCheckToken = 0;
     this.needsDraw = true;
     if (this.saveReadFailed) this.notice('本机存档暂时不可用');
     this.lastAnimationDraw = 0;
@@ -72,6 +82,7 @@ export default class Main {
       finishTransition(this.ui.pageTransition);
       finishHomeDrawers(this.ui.homeDrawers);
       this.visible = false;
+      this.hideProfileAuthButton();
       this.cancelTouch();
       if (this.ui.playing) this.ui.paused = true;
       logInfo('app.hidden', { gamePaused: this.ui.playing });
@@ -87,6 +98,7 @@ export default class Main {
       }
       this.lastFrame = this.now();
       this.visible = true;
+      if (this.cachedPlayerProfile) this.refreshPlayerProfile();
       this.needsDraw = true;
       logInfo('app.shown', { gamePaused: this.ui.playing && this.ui.paused });
       this.save();
@@ -109,6 +121,8 @@ export default class Main {
     const oldField = this.ui.playing && fieldChanged ? this.scene.gameField() : null;
     finishTransition(this.ui.pageTransition);
     if (fieldChanged) {
+      this.destroyProfileAuthButton();
+      this.profileButtonCreateFailed = false;
       finishTransition(this.ui.pageTransition);
       finishHomeDrawers(this.ui.homeDrawers);
       if (this.ui.playing) this.ui.paused = true;
@@ -161,6 +175,180 @@ export default class Main {
       this.saveDisabled = true;
       this.saveReadFailed = true;
       return hydrate({}, this.now());
+    }
+  }
+
+  loadPlayerProfile() {
+    try {
+      const raw = wx.getStorageSync(PLAYER_PROFILE_KEY);
+      const profile = cachedPlayerProfile(raw);
+      logEvent('profile.cache_loaded', { result: profile ? 'stored' :
+        raw == null || raw === '' ? 'empty' : 'invalid' });
+      return profile;
+    } catch (error) {
+      logWarn('profile.cache_read_failed');
+      return null;
+    }
+  }
+
+  storePlayerProfile(profile) {
+    try {
+      wx.setStorageSync(PLAYER_PROFILE_KEY, playerProfileRecord(profile));
+      logEvent('profile.cache_saved');
+      return true;
+    } catch (error) {
+      logWarn('profile.cache_write_failed');
+      return false;
+    }
+  }
+
+  clearPlayerProfile(reason = 'player') {
+    this.profileCheckToken++;
+    this.cachedPlayerProfile = null;
+    this.ui.playerProfile = null;
+    this.scene.profileAvatar = null;
+    this.needsDraw = true;
+    try {
+      if (typeof wx.removeStorageSync === 'function') wx.removeStorageSync(PLAYER_PROFILE_KEY);
+      else wx.setStorageSync(PLAYER_PROFILE_KEY, '');
+      logEvent('profile.cleared', { reason });
+      if (reason === 'player') this.notice('已清除本机保存的微信资料');
+    } catch (error) {
+      logWarn('profile.cache_clear_failed', { reason });
+      this.notice('页面资料已清除，本机存储暂不可用');
+    }
+  }
+
+  refreshPlayerProfile() {
+    const cached = this.cachedPlayerProfile;
+    if (!cached) return;
+    // A stored profile remains private until the current permission is checked.
+    this.ui.playerProfile = null;
+    this.needsDraw = true;
+    if (typeof wx.getSetting !== 'function') {
+      logWarn('profile.permission_check_unavailable');
+      return;
+    }
+    const token = ++this.profileCheckToken;
+    try {
+      wx.getSetting({
+        success: result => {
+          if (token !== this.profileCheckToken) return;
+          if (result?.authSetting?.['scope.userInfo'] !== true) {
+            this.clearPlayerProfile('permission_revoked');
+            return;
+          }
+          this.ui.playerProfile = cached;
+          this.needsDraw = true;
+          if (typeof wx.getUserInfo !== 'function') {
+            logWarn('profile.refresh_api_unavailable');
+            return;
+          }
+          try {
+            wx.getUserInfo({ withCredentials: false, lang: 'zh_CN',
+              success: response => {
+                if (token !== this.profileCheckToken) return;
+                const profile = normalizePlayerProfile(response?.userInfo);
+                if (!profile) { logWarn('profile.refresh_invalid'); return; }
+                this.ui.playerProfile = profile;
+                this.cachedPlayerProfile = profile;
+                this.storePlayerProfile(profile);
+                this.needsDraw = true;
+                logEvent('profile.refreshed');
+              },
+              fail: () => logWarn('profile.refresh_failed'),
+            });
+          } catch (error) { logWarn('profile.refresh_failed'); }
+        },
+        fail: () => logWarn('profile.permission_check_failed'),
+      });
+    } catch (error) { logWarn('profile.permission_check_failed'); }
+  }
+
+  handleProfileAuthorization(result) {
+    const outcome = authorizationOutcome(result);
+    logEvent('profile.authorization_result', { result: outcome.kind });
+    if (outcome.kind === 'authorized') {
+      this.profileCheckToken++;
+      this.ui.playerProfile = outcome.profile;
+      this.cachedPlayerProfile = outcome.profile;
+      this.storePlayerProfile(outcome.profile);
+      this.hideProfileAuthButton();
+      this.needsDraw = true;
+      this.notice('已获取微信资料');
+    } else {
+      this.notice(outcome.kind === 'denied' ? '未授权，继续使用本机档案' :
+        outcome.kind === 'privacy_required' ? '请先同意隐私保护指引' :
+          '暂未获取到微信资料，请稍后重试');
+    }
+  }
+
+  hideProfileAuthButton() {
+    if (!this.profileAuthButton || this.profileAuthHidden) return;
+    try { this.profileAuthButton.hide(); this.profileAuthHidden = true; }
+    catch (error) { logWarn('profile.button_hide_failed'); }
+  }
+
+  destroyProfileAuthButton() {
+    const button = this.profileAuthButton;
+    if (!button) return;
+    this.profileAuthButton = null;
+    this.profileAuthRect = '';
+    this.profileAuthHidden = false;
+    try {
+      if (typeof button.offTap === 'function' && this.profileAuthListener)
+        button.offTap(this.profileAuthListener);
+    } catch (error) { logWarn('profile.button_listener_cleanup_failed'); }
+    try { button.destroy(); }
+    catch (error) { logWarn('profile.button_destroy_failed'); }
+    this.profileAuthListener = null;
+  }
+
+  syncProfileAuthButton() {
+    const eligible = this.visible && this.ui.page === 'profile' &&
+      !transitionFrame(this.ui.pageTransition).active && !this.ui.showSettings &&
+      !this.ui.debugEditor && !this.ui.coinWaysTarget && !this.ui.rewardHelp &&
+      !this.ui.showGrowthHelp && !this.ui.adoptionConfirmId;
+    const target = eligible && this.scene.buttons.find(button =>
+      button.id === 'profile_authorize');
+    if (!target || !this.ui.profileAuthAvailable) {
+      if (this.ui.page === 'profile' && this.ui.playerProfile)
+        this.destroyProfileAuthButton();
+      else this.hideProfileAuthButton();
+      return;
+    }
+    const { offsetX, offsetY, scale } = this.scene;
+    const left = offsetX + target.x * scale;
+    const top = offsetY + target.y * scale;
+    const width = target.w * scale;
+    const height = target.h * scale;
+    const rect = [left, top, width, height].map(value => value.toFixed(2)).join(':');
+    if (this.profileAuthButton && this.profileAuthRect === rect) {
+      if (this.profileAuthHidden) {
+        try { this.profileAuthButton.show(); this.profileAuthHidden = false; }
+        catch (error) { logWarn('profile.button_show_failed'); }
+      }
+      return;
+    }
+    this.destroyProfileAuthButton();
+    if (this.profileButtonCreateFailed) return;
+    try {
+      const button = wx.createUserInfoButton({ type: 'text', text: ' ',
+        withCredentials: false, lang: 'zh_CN',
+        style: { left, top, width, height, backgroundColor: 'rgba(0,0,0,0)',
+          borderColor: 'rgba(0,0,0,0)', borderWidth: 0,
+          color: '#FFFFFF', fontSize: 1, lineHeight: height } });
+      this.profileAuthButton = button;
+      if (!button || typeof button.onTap !== 'function') throw Error('button unavailable');
+      const listener = result => this.handleProfileAuthorization(result);
+      this.profileAuthListener = listener;
+      button.onTap(listener);
+      this.profileAuthRect = rect;
+      logEvent('profile.authorization_entry_ready');
+    } catch (error) {
+      this.destroyProfileAuthButton();
+      this.profileButtonCreateFailed = true;
+      logWarn('profile.button_create_failed');
     }
   }
 
@@ -251,12 +439,18 @@ export default class Main {
         this.ui.showGrowthHelp || this.ui.rewardHelp || this.ui.debugEditor) finishTransition(transition);
     this.ui.frameNow = this.now();
     this.scene.draw(this.state, this.ui, this.currentCoinWays());
+    this.syncProfileAuthButton();
   }
 
   requestPage(next, options = {}) {
     if (next === this.ui.page) return false;
     const frame = requestTransition(this.ui.pageTransition, next, this.now(), options);
     if (!frame.accepted) return false;
+    this.hideProfileAuthButton();
+    if (next === 'profile') {
+      this.profileButtonCreateFailed = false;
+      this.refreshPlayerProfile();
+    }
     if (this.ui.playing && next !== 'game') this.ui.paused = true;
     this.cancelTouch();
     this.clearHomeFeedback();
@@ -393,6 +587,7 @@ export default class Main {
     if (id === 'settings') {
       if (this.ui.playing) this.ui.paused = true;
       this.ui.showSettings = true;
+      this.hideProfileAuthButton();
       return;
     }
     if (id === 'pause_game' && this.ui.playing) {
@@ -421,6 +616,12 @@ export default class Main {
     }
     if (id === 'profile_tasks' || id === 'profile_home') {
       this.requestPage(id === 'profile_tasks' ? 'tasks' : 'home');
+      return;
+    }
+    if (id === 'profile_authorize') {
+      this.profileButtonCreateFailed = false;
+      this.syncProfileAuthButton();
+      this.notice('请再次点击授权按钮');
       return;
     }
     if (id === 'home_care_toggle' || id === 'home_status_toggle') {

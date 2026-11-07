@@ -109,6 +109,7 @@ export default class Scene {
     this.sceneImages = new Map();
     this.linenImage = null;
     this.uiImages = new Map();
+    this.profileAvatar = null;
     this.viewport = null;
   }
 
@@ -247,6 +248,58 @@ export default class Scene {
       return false;
     }
     return true;
+  }
+
+  loadProfileAvatar(url) {
+    if (!url) return null;
+    if (this.profileAvatar?.url === url) return this.profileAvatar;
+    const createImage = this.canvas.createImage ? () => this.canvas.createImage() :
+      typeof wx !== 'undefined' && wx.createImage ? () => wx.createImage() : null;
+    if (!createImage) {
+      if (!this.profileAvatarApiUnavailable) {
+        this.profileAvatarApiUnavailable = true;
+        logWarn('profile.avatar_api_unavailable');
+      }
+      return null;
+    }
+    try {
+      const image = createImage();
+      const entry = { url, image, ready: false, failed: false };
+      this.profileAvatar = entry;
+      image.onload = () => {
+        if (this.profileAvatar !== entry) return;
+        entry.ready = true;
+        if (this.onAssetReady) this.onAssetReady();
+      };
+      image.onerror = () => {
+        if (this.profileAvatar !== entry) return;
+        entry.failed = true;
+        logWarn('profile.avatar_load_failed');
+        if (this.onAssetReady) this.onAssetReady();
+      };
+      image.src = url;
+      return entry;
+    } catch (error) {
+      logWarn('profile.avatar_create_failed');
+      return null;
+    }
+  }
+
+  drawProfileAvatar(profile, x, y) {
+    this.circle(x, y, 29, '#E8F1E7', '#AAC9B9', 1);
+    this.circle(x, y - 8, 7, '#55A08D');
+    this.curve(x - 14, y + 14, x, y - 2, x + 14, y + 14, '#55A08D', 5);
+    const entry = this.loadProfileAvatar(profile?.avatarUrl);
+    if (!entry?.ready || entry.failed) return;
+    const c = this.ctx;
+    c.save();
+    try {
+      c.beginPath(); c.arc(x, y, 28, 0, Math.PI * 2); c.clip();
+      c.drawImage(entry.image, x - 28, y - 28, 56, 56);
+    } catch (error) {
+      entry.failed = true;
+      logWarn('profile.avatar_draw_failed');
+    } finally { c.restore(); }
   }
 
   fabricPanel(x, y, w, h, radius, fill = C.paper, stitch = true) {
@@ -1041,27 +1094,41 @@ export default class Scene {
 
   }
 
-  profile(state) {
+  profile(state, ui) {
     const layout = this.homeGeometry();
     const top = layout.identity.y;
     const { ratio } = this.layout();
     const pet = state.pets[state.active];
+    const player = ui.playerProfile;
     this.text('我的', 20, top + 27, 25, C.ink, 'left', 'bold');
     this.settingsButton(layout);
 
     const profileY = top + 57;
     const profileH = 104 + 36 * ratio;
     this.fabricPanel(20, profileY, 350, profileH, 19, C.paper, true);
-    this.circle(66, profileY + profileH / 2, 29, '#E8F1E7', '#AAC9B9', 1);
-    this.circle(66, profileY + profileH / 2 - 8, 7, '#55A08D');
-    this.curve(52, profileY + profileH / 2 + 14, 66,
-      profileY + profileH / 2 - 2, 80, profileY + profileH / 2 + 14, '#55A08D', 5);
-    this.readableText('本地档案', 104, profileY + 30, 10, C.muted);
-    this.text('本机玩家', 104, profileY + 53, 18, C.ink, 'left', 'bold');
+    this.drawProfileAvatar(player, 66, profileY + profileH / 2);
+    this.readableText(player ? '微信资料 · 本机保存' : '本地档案',
+      104, profileY + 30, 10, C.muted);
+    this.text(this.fitText(player?.nickName || '本机玩家', 246, 18),
+      104, profileY + 53, 18, C.ink, 'left', 'bold');
     this.readableText(`已领养 ${Object.keys(state.pets).length} 只 · 照料 ${state.totalActions} 次`,
       104, profileY + 76, 11, C.brown);
 
-    const walletY = profileY + profileH + 14;
+    let walletY = profileY + profileH + 14;
+    if (!player) {
+      const authY = profileY + profileH + 9;
+      const authH = Math.max(40, 44 / this.scale);
+      if (ui.profileAuthAvailable) {
+        this.button('profile_authorize', 20, authY, 350, authH,
+          '使用微信昵称头像', C.paper, C.brown, FABRIC.edge, 12,
+          { variant: 'secondary' });
+      } else {
+        this.fabricPanel(20, authY, 350, authH, 14, C.paper, false);
+        this.readableText('当前微信版本暂不支持资料授权', 35,
+          authY + authH / 2, 11, C.muted);
+      }
+      walletY = authY + authH + 14;
+    }
     this.text('爪爪币', 22, walletY - 1, 14, C.ink, 'left', 'bold');
     this.fabricPanel(20, walletY + 10, 350, 76, 18, C.peach, true);
     this.readableText('当前余额', 39, walletY + 33, 10, C.muted);
@@ -1745,7 +1812,7 @@ export default class Scene {
     else if (ui.page === 'collection') this.collection(state);
     else if (ui.page === 'tasks') this.tasks(state);
     else if (ui.page === 'game') this.game(state, ui);
-    else if (ui.page === 'profile') this.profile(state);
+    else if (ui.page === 'profile') this.profile(state, ui);
     else this.home(state, ui);
   }
 
