@@ -232,12 +232,14 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   tapId('quit_game');
   tapId('quit_confirm_continue');
   assert.equal(game.ui.paused, false);
+  tapId('nav_profile');
   tapId('settings');
   assert.equal(game.ui.paused, true);
   tapId('sound_toggle');
   assert.equal(game.state.soundEnabled, false);
   const playedBeforeMute = played.length;
   tapId('settings_close');
+  tapId('nav_game');
   tapId('resume_game');
   handlers.move({ touches: [clientPoint(150, 600)] });
   assert.equal(game.ui.basketX, 150);
@@ -652,13 +654,13 @@ test('task progress and daily gift share equal cards above the task list', async
   }
 });
 
-test('header controls stay below the native WeChat menu on different screens', async () => {
+test('profile settings stays below the native WeChat menu on different screens', async () => {
   const { default: Scene } = await import('../js/scene.js');
   const { initialState, adopt } = await import('../js/model.js');
   const context = new Proxy({}, { get: () => () => {} });
   const state = initialState();
   adopt(state, 'cat');
-  const ui = { page: 'home', expressionUntil: 0 };
+  const ui = { page: 'profile', expressionUntil: 0 };
   for (const device of [
     { width: 390, height: 844, safeTop: 0, menuTop: 12, menuBottom: 45 },
     { width: 320, height: 568, safeTop: 17, menuTop: 12, menuBottom: 47 },
@@ -686,19 +688,19 @@ test('header controls stay below the native WeChat menu on different screens', a
   assert.ok(fallbackSettings.y>=0 && fallbackSettings.h*fallback.scale>=44, 'fallback settings remain reachable without a capsule');
 });
 
-test('main pages omit redundant headings while preserving wallet and navigation', async () => {
+test('main pages omit old top controls while preserving navigation', async () => {
   const {default: Scene} = await import('../js/scene.js');
   const {initialState, adopt} = await import('../js/model.js');
   const state = initialState();
   adopt(state,'cat');
-  for (const page of ['home','collection','tasks']) {
+  for (const page of ['home','collection','tasks','game']) {
     const scene = new Scene(new Proxy({}, {get: () => () => {}}), {width: 390, height: 844});
     const labels = [];
     scene.text = (v) => labels.push(String(v));
     scene.draw(state, {page, expressionUntil: 0});
     assert.ok(!labels.some(v => ['爪爪小屋','陪伴日记','小伙伴们','每日清单'].includes(v)));
-    assert.ok(labels.some(v => v.includes('60')),'wallet remains visible');
-    assert.ok(scene.buttons.some(b => b.id === 'settings'));
+    assert.ok(!labels.includes('✦  60'), 'old wallet capsule is absent');
+    assert.ok(!scene.buttons.some(b => b.id === 'settings'));
     assert.ok(scene.buttons.some(b => b.id === 'nav_'+page));
   }
 });

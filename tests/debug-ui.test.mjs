@@ -56,6 +56,9 @@ test('settings entry, numeric keypad, save and disabled mode work through touch 
   tapId('adopt_selected');
   game.ui.guideHoldUntil = Date.now() - 1;
   tapId('guide_skip');
+  tapId('nav_profile');
+  const { finishTransition } = await import('../js/page-transition.js');
+  finishTransition(game.ui.pageTransition);
   tapId('settings');
   tapId('debug_open');
   tapId('debug_field:hunger');

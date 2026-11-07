@@ -116,7 +116,7 @@ test('asymmetric side insets keep every main control inside the horizontal safe 
   const state = initialState();
   adopt(state, 'cat');
   const ui = { page: 'home', expressionUntil: 0 };
-  for (const page of ['home', 'collection', 'tasks', 'game']) {
+  for (const page of ['home', 'collection', 'tasks', 'game', 'profile']) {
     ui.page = page;
     scene.draw(state, ui);
     for (const button of scene.buttons) {
@@ -163,7 +163,7 @@ test('all main-page hit areas remain above the fallback bottom margin', () => {
   const ui = { page: 'home', guideStep: 0, expressionUntil: 0 };
   scene.draw(state, ui);
   adopt(state, 'cat');
-  for (const page of ['home', 'collection', 'tasks', 'game']) {
+  for (const page of ['home', 'collection', 'tasks', 'game', 'profile']) {
     ui.page = page;
     scene.draw(state, ui);
     for (const button of scene.buttons) {

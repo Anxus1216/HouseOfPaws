@@ -51,7 +51,6 @@ const SCENE_NAMES = ['home_afternoon', 'wash_nook', 'play_garden', 'rest_evening
 // The design scales from the compact screen height to the fully expanded layout.
 const COMPACT_LAYOUT_HEIGHT = 680;
 const EXPANDED_LAYOUT_HEIGHT = 844;
-const GAME_FIELD_COMPACT_HEIGHT = 356;
 const NAV_HEIGHT = 64;
 const MIN_CLOSE_HIT_SIZE_PX = 44;
 // Match the short-screen drawer text; its arc and spacing also use window pixels.
@@ -468,7 +467,9 @@ export default class Scene {
     const ratio = clamp((this.h - COMPACT_LAYOUT_HEIGHT) /
       (EXPANDED_LAYOUT_HEIGHT - COMPACT_LAYOUT_HEIGHT), 0, 1);
     const extra = Math.max(0, this.h - EXPANDED_LAYOUT_HEIGHT);
-    return { ratio, extra, sceneY: 136 + 33 * ratio,
+    // The native menu determines the safe top; these pages no longer reserve a wallet row.
+    const sceneY = this.homeGeometry().identity.y + 52;
+    return { ratio, extra, sceneY,
       sceneH: 165 + 83 * ratio + extra, navY: this.h - NAV_HEIGHT };
   }
 
@@ -484,22 +485,17 @@ export default class Scene {
     };
   }
 
-  header(state, heading, description, caption, settings = true, dark = false) {
+  header(state, heading, description, caption, settings = true) {
     const { ratio } = this.layout();
-    const headingColor = dark ? '#FFF8E8' : C.ink;
-    const detailColor = dark ? '#FBE9CA' : C.brown;
-    const compact = ['陪伴日记', '小伙伴们', '每日清单'].includes(heading) ||
-      (heading === '星星接接乐' && !this.currentUi?.playing && !this.currentUi?.gameOutcome);
-    if (compact) { this.compactControls(state, this.homeGeometry(), settings); return; }
-    if (!compact) this.text('爪爪小屋', 20, 35, 18, headingColor, 'left', 'bold');
-    this.compactControls(state, this.homeGeometry(), settings);
+    this.text('爪爪小屋', 20, 35, 18, C.ink, 'left', 'bold');
+    if (settings) this.settingsButton(this.homeGeometry());
     const headingY = 83 + 16 * ratio;
-    if (!compact) this.text(heading, 20, headingY, dark ? 27 : HEADER_TYPE.headingSize,
-      headingColor, 'left', 'bold');
+    this.text(heading, 20, headingY, HEADER_TYPE.headingSize,
+      C.ink, 'left', 'bold');
     this.text(description, 20, headingY + HEADER_TYPE.descriptionBelowHeading,
-      HEADER_TYPE.descriptionSize, detailColor);
+      HEADER_TYPE.descriptionSize, C.brown);
     if (ratio > .3 && caption) this.text(caption, 20,
-      headingY + HEADER_TYPE.captionBelowHeading, HEADER_TYPE.captionSize, detailColor);
+      headingY + HEADER_TYPE.captionBelowHeading, HEADER_TYPE.captionSize, C.brown);
   }
 
   face(expression, t) {
@@ -729,16 +725,10 @@ export default class Scene {
     this.readableText(growth.progress, identity.x, identity.y + 49 * unit, 11, C.brown);
     this.readableText(`${growth.today} ›`, identity.x, identity.y + 63 * unit, 10, C.muted);
     this.buttons.push({ id: 'home_growth_help', ...layout.growth });
-    this.compactControls(state, layout);
   }
 
-  compactControls(state, layout, settingsEnabled = true) {
+  settingsButton(layout) {
     const unit = layout.unit;
-    const wallet = layout.wallet;
-    this.fabricPanel(wallet.x, wallet.y, wallet.w, wallet.h, wallet.h / 2, C.peach, false);
-    this.text(`✦  ${state.coins}`, wallet.x + wallet.w / 2, wallet.y + wallet.h / 2 + unit,
-      13 * unit, C.brown, 'center', 'bold');
-    if (!settingsEnabled) return;
     const settings = layout.settings;
     this.circle(settings.x + settings.w / 2, settings.y + settings.h / 2, 20 * unit,
       this.pressedId === 'settings' ? PRESS.icon : '#F8EFE5');
@@ -993,7 +983,6 @@ export default class Scene {
   }
 
   collection(state) {
-    this.header(state, '小伙伴们', '每一位都值得被珍惜', '选择此刻想陪伴的伙伴');
     const { sceneY, ratio } = this.layout();
     const rowH = COLLECTION_ROW_BASE_HEIGHT + COLLECTION_ROW_EXTRA_HEIGHT * ratio;
     const gap = COLLECTION_ROW_BASE_GAP + COLLECTION_ROW_EXTRA_GAP * ratio;
@@ -1058,13 +1047,7 @@ export default class Scene {
     const { ratio } = this.layout();
     const pet = state.pets[state.active];
     this.text('我的', 20, top + 27, 25, C.ink, 'left', 'bold');
-    const settings = layout.settings;
-    const unit = layout.unit;
-    this.circle(settings.x + settings.w / 2, settings.y + settings.h / 2, 20 * unit,
-      this.pressedId === 'settings' ? PRESS.icon : '#F8EFE5');
-    this.text('⚙', settings.x + settings.w / 2, settings.y + settings.h / 2,
-      20, C.brown, 'center');
-    this.buttons.push({ id: 'settings', ...settings });
+    this.settingsButton(layout);
 
     const profileY = top + 57;
     const profileH = 104 + 36 * ratio;
@@ -1221,7 +1204,6 @@ export default class Scene {
   }
 
   tasks(state) {
-    this.header(state, '每日清单', '今天的小小约定', '做一点小事，换一份好心情');
     const { sceneY, ratio } = this.layout();
     const todayTasks = taskSnapshot(state);
     const progress = todayTasks?.progress || {};
@@ -1300,15 +1282,14 @@ export default class Scene {
   }
 
   gameField() {
-    const { sceneY, ratio, extra } = this.layout();
-    const h = GAME_FIELD_COMPACT_HEIGHT + 104 * ratio + extra;
+    const { sceneY, navY } = this.layout();
+    const h = navY - sceneY - 46;
     return { x: 20, y: sceneY, w: 350, h, bottom: sceneY + h };
   }
 
   game(state, ui) {
     this.sceneBackdrop('star_sky', 0, 0, 390, this.layout().navY,
       0, '#174768', .12);
-    this.header(state, '星星接接乐', '把星光装进小篮子', '', true, true);
     const field = this.gameField();
     const fieldY = field.y, fieldH = field.h;
     if (ui.playing) {

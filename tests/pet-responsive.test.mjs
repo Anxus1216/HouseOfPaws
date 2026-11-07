@@ -71,5 +71,5 @@ test('idle game pets and props scale together without moving the playable field 
   }
   assert.ok(sides[1] > sides[0] * 1.4);
   assert.ok(sides[2] > sides[1]);
-  assert.ok(sides[3] > sides[1]);
+  assert.ok(sides[3] >= sides[1], 'very tall game scenes respect the available width cap');
 });

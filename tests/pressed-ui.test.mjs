@@ -20,7 +20,11 @@ test('button press clears on release and on leaving its hit area', async () => {
     onHide() {}, onShow() {},
   };
   const { default: Main } = await import('../js/main.js');
+  const { adopt } = await import('../js/model.js');
   const game = new Main();
+  adopt(game.state, 'cat');
+  game.state.guide.phase = 'skipped';
+  game.requestPage('profile', { immediate: true });
   game.draw();
   const button = game.scene.buttons.find(item => item.id === 'settings');
   assert.ok(button);

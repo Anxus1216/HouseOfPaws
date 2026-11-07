@@ -72,7 +72,7 @@ test('settings retain pressed color and modal close targets stay 44 window pixel
   const colors = [];
   view.circle = (...args) => colors.push(args[3]);
   view.pressedId = 'settings';
-  view.compactControls({ coins: 60 }, view.homeGeometry());
+  view.settingsButton(view.homeGeometry());
   assert.ok(colors.includes('#EBD7C4'));
   view.buttons = [];
   view.roundIconButton('settings_close', 318, 200, 17, '×');
