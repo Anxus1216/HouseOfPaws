@@ -387,6 +387,29 @@ test('main actions stay reachable on a shorter portrait screen', async () => {
   }
 });
 
+test('first visit draws a single welcome title above the artwork', async () => {
+  const { default: Scene } = await import('../js/scene.js');
+  const { initialState } = await import('../js/model.js');
+  for (const [width, height, top, bottom, menuBottom] of [
+    [320, 568, 20, 0, 47], [390, 844, 44, 34, 52],
+    [390, 844, 0, 0, 52], [390, 844, 0, 0, null],
+  ]) {
+    const context = new Proxy({}, { get(target, key) { return target[key] || (() => {}); } });
+    const scene = new Scene(context, { width, height });
+    scene.setViewport({ width, height, top, bottom, left: 0, right: 0, menuBottom });
+    const labels = [];
+    context.fillText = (label, x, y) => labels.push({ label, x, y, font: context.font });
+    scene.draw(initialState(), { page: 'home' });
+
+    const headings = labels.filter(({ label }) =>
+      ['欢迎来到小屋', '爪爪小屋', '一起慢慢长大', '从第一位小伙伴开始'].includes(label));
+    assert.deepEqual(headings,
+      [{ label: '欢迎来到小屋', x: 20, y: 35, font: 'bold 24px sans-serif' }]);
+    assert.ok(headings[0].y + 12 < scene.layout().sceneY,
+      `welcome title clears the artwork at ${width}x${height}`);
+  }
+});
+
 test('blocked reward labels and explanation fit short and tall task screens', async () => {
   const { default: Scene } = await import('../js/scene.js');
   const { initialState, adopt, MAX_COINS, taskClaimState, giftClaimState } =

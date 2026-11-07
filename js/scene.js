@@ -67,10 +67,6 @@ const HOME_ACTIONS = Object.freeze([
   { id: 'play', label: '玩耍', icon: 'play', fill: '#EDE5FA', pressed: '#D4AFE9' },
   { id: 'rest', label: '休息', icon: 'rest', fill: '#DCEBFA', pressed: '#9DC8EE' },
 ]);
-const HEADER_TYPE = Object.freeze({
-  headingSize: 24, descriptionSize: 12, captionSize: 10,
-  accentAboveHeading: 18, descriptionBelowHeading: 24, captionBelowHeading: 48,
-});
 // The welcome artwork extends below the home scene, with more space on taller screens.
 const WELCOME_MIN_EXTENSION = 70;
 const WELCOME_HEIGHT_EXTENSION_RATE = .25;
@@ -536,19 +532,6 @@ export default class Scene {
       dockX: layout.carePanel.x,
       dockW: layout.carePanel.w,
     };
-  }
-
-  header(state, heading, description, caption, settings = true) {
-    const { ratio } = this.layout();
-    this.text('爪爪小屋', 20, 35, 18, C.ink, 'left', 'bold');
-    if (settings) this.settingsButton(this.homeGeometry());
-    const headingY = 83 + 16 * ratio;
-    this.text(heading, 20, headingY, HEADER_TYPE.headingSize,
-      C.ink, 'left', 'bold');
-    this.text(description, 20, headingY + HEADER_TYPE.descriptionBelowHeading,
-      HEADER_TYPE.descriptionSize, C.brown);
-    if (ratio > .3 && caption) this.text(caption, 20,
-      headingY + HEADER_TYPE.captionBelowHeading, HEADER_TYPE.captionSize, C.brown);
   }
 
   face(expression, t) {
@@ -1251,9 +1234,10 @@ export default class Scene {
       '知道啦', C.coral, '#FFF', null, 14, { variant: 'primary' });
   }
 
-  welcome(state, ui) {
-    this.header(state, '欢迎来到小屋', '一起慢慢长大', '从第一位小伙伴开始', !!ui.debugEnabled);
+  welcome(ui) {
     const { sceneY, sceneH } = this.layout();
+    this.text('欢迎来到小屋', 20, 35, 24, C.ink, 'left', 'bold');
+    if (ui.debugEnabled) this.settingsButton(this.homeGeometry());
     const visualH = sceneH + Math.max(WELCOME_MIN_EXTENSION,
       (this.h - COMPACT_LAYOUT_HEIGHT) * WELCOME_HEIGHT_EXTENSION_RATE);
     this.sceneBackdrop('home_afternoon', 20, sceneY, 350, visualH, 23, '#F2D8B8');
@@ -1796,7 +1780,7 @@ export default class Scene {
       c.clip();
       this.background(ANIMATION_CLIP_LEFT, clipY, ANIMATION_CLIP_WIDTH, clipHeight);
       this.buttons = [];
-      if (!state.active) this.welcome(state, ui);
+      if (!state.active) this.welcome(ui);
       else if (ui.page === 'collection') this.collection(state);
       else if (ui.page === 'game') this.game(state, ui);
       else this.home(state, ui);
@@ -1808,7 +1792,7 @@ export default class Scene {
   }
 
   drawContent(state, ui) {
-    if (!state.active) this.welcome(state, ui);
+    if (!state.active) this.welcome(ui);
     else if (ui.page === 'collection') this.collection(state);
     else if (ui.page === 'tasks') this.tasks(state);
     else if (ui.page === 'game') this.game(state, ui);
