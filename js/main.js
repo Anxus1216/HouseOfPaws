@@ -1048,6 +1048,7 @@ export default class Main {
       if (reward.leveled) this.playSound('level');
       const pet = this.state.pets[this.state.active];
       ui.gameOutcome = completedGameOutcome(ui.score, reward, pet, taskCompleted, now);
+      this.needsDraw = true;
       ui.toast = '';
       ui.toastUntil = 0;
       this.save();

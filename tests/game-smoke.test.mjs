@@ -298,11 +298,15 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   game.ui.spawnTimer = 100;
   const zeroStarBalance = game.state.coins;
   const zeroStarHappy = game.state.pets.cat.happy;
-  game.updateGame(20);
+  game.needsDraw = false;
+  game.lastFrame = transitionNow - 20000;
+  game.loop();
   assert.equal(game.ui.gameOutcome.kind, 'completed');
   assert.equal(game.ui.gameOutcome.stars, 0);
   assert.equal(game.ui.gameOutcome.growthReason, 'no_stars');
   assert.equal(game.ui.gameOutcome.coins, 0);
+  assert.ok(game.scene.buttons.some(button => button.id === 'game_return_home'),
+    'the result is drawn on the finishing frame without another tap');
   assert.equal(game.state.coins, zeroStarBalance);
   assert.ok(game.state.pets.cat.happy <= zeroStarHappy &&
     game.state.pets.cat.happy > zeroStarHappy - 0.001,
