@@ -55,6 +55,12 @@ const NAV_HEIGHT = 64;
 const MIN_CLOSE_HIT_SIZE_PX = 44;
 // Match the short-screen drawer text; its arc and spacing also use window pixels.
 const HOME_STATUS_FONT_SIZE_PX = 11;
+const HOME_HEADER = Object.freeze({
+  nameSize: 17, labelSize: 12, levelSize: 13, labelHeight: 24,
+  labelPadding: 10, gap: 10, stripHeight: 32, stripInset: 6,
+  levelWidth: 46, trackHeight: 7, capFill: '#F8DEB7', capInk: '#8A421F',
+  capBorder: '#DDA05E', levelFill: '#79BF9D',
+});
 const HOME_STATS = Object.freeze([
   { label: '饱腹', field: 'hunger', color: '#F3A34D' },
   { label: '清洁', field: 'clean', color: '#58AA9B' },
@@ -752,14 +758,62 @@ export default class Scene {
     this.buttons.push({ id, ...bounds });
   }
 
+  headerFabricPanel(x, y, w, h, radius, fill, border = FABRIC.edge) {
+    const unit = 1 / this.scale;
+    this.box(x, y, w, h, radius, fill, border, unit);
+    this.linenOverlay(x, y, w, h, radius, .32);
+    const c = this.ctx;
+    const inset = 3 * unit;
+    c.save();
+    c.setLineDash([3 * unit, 3 * unit]);
+    this.roundedPath(x + inset, y + inset, w - 2 * inset, h - 2 * inset,
+      Math.max(unit, radius - inset));
+    c.strokeStyle = border;
+    c.lineWidth = unit;
+    c.stroke();
+    c.restore();
+  }
+
   compactHeader(state, pet, layout) {
     const unit = layout.unit;
     const identity = layout.identity;
-    this.readableText(this.fitText(pet.name, identity.w, 17), identity.x, identity.y + 13 * unit, 17, C.ink, 'left', 'bold');
-    this.readableText(`Lv.${pet.level}`, identity.x, identity.y + 32 * unit, 11, C.muted);
     const growth = growthSummary(pet);
-    this.readableText(growth.progress, identity.x, identity.y + 49 * unit, 11, C.brown);
-    this.readableText(`${growth.today} ›`, identity.x, identity.y + 63 * unit, 10, C.muted);
+    const labelSize = HOME_HEADER.labelSize * unit;
+    const dailyWidth = this.textWidth(growth.today, labelSize, 'bold') + HOME_HEADER.labelPadding * 2 * unit;
+    const dailyX = identity.x + identity.w - dailyWidth;
+    const dailyHeight = HOME_HEADER.labelHeight * unit;
+    const dailyY = identity.y + (identity.h - dailyHeight) / 2;
+    this.headerFabricPanel(dailyX, dailyY, dailyWidth, dailyHeight, dailyHeight / 2,
+      growth.dailyCapped ? HOME_HEADER.capFill : C.peach,
+      growth.dailyCapped ? HOME_HEADER.capBorder : FABRIC.edge);
+    this.text(growth.today, dailyX + dailyWidth / 2, identity.y + identity.h / 2,
+      labelSize, growth.dailyCapped ? HOME_HEADER.capInk : C.brown, 'center', 'bold');
+    const nameSize = HOME_HEADER.nameSize * unit;
+    this.text(this.fitText(pet.name, dailyX - identity.x - HOME_HEADER.gap * unit, nameSize, 'bold'),
+      identity.x, identity.y + identity.h / 2, nameSize, C.ink, 'left', 'bold');
+
+    const strip = layout.growth;
+    const stripHeight = HOME_HEADER.stripHeight * unit;
+    const stripY = strip.y + (strip.h - stripHeight) / 2;
+    const centerY = stripY + stripHeight / 2;
+    this.headerFabricPanel(strip.x, stripY, strip.w, stripHeight, 12 * unit,
+      this.pressedId === 'home_growth_help' ? PRESS.secondary : C.paper);
+    const levelX = strip.x + HOME_HEADER.stripInset * unit;
+    const levelWidth = HOME_HEADER.levelWidth * unit;
+    this.headerFabricPanel(levelX, stripY + 4 * unit, levelWidth, stripHeight - 8 * unit,
+      5 * unit, HOME_HEADER.levelFill, '#E7F1DF');
+    this.text(`Lv.${pet.level}`, levelX + levelWidth / 2, centerY,
+      HOME_HEADER.levelSize * unit, C.ink, 'center', 'bold');
+    const progressLabel = `${growth.progress} ›`;
+    const progressRight = strip.x + strip.w - HOME_HEADER.gap * unit;
+    const progressWidth = this.textWidth(progressLabel, labelSize);
+    this.text(progressLabel, progressRight, centerY, labelSize, C.brown, 'right');
+    const trackX = levelX + levelWidth + HOME_HEADER.gap * unit;
+    const trackWidth = Math.max(0, progressRight - progressWidth - HOME_HEADER.gap * unit - trackX);
+    const trackHeight = HOME_HEADER.trackHeight * unit;
+    this.box(trackX, centerY - trackHeight / 2, trackWidth, trackHeight, trackHeight / 2, C.track);
+    if (growth.ratio > 0) this.box(trackX, centerY - trackHeight / 2,
+      trackWidth * growth.ratio, trackHeight, Math.min(trackHeight / 2, trackWidth * growth.ratio / 2), HOME_HEADER.levelFill);
     this.buttons.push({ id: 'home_growth_help', ...layout.growth });
   }
 
@@ -850,20 +904,20 @@ export default class Scene {
 
   }
 
-  textWidth(value, size = 11) {
+  textWidth(value, size = 11, weight = 'normal') {
     const fontSize = Math.max(size, 11 / this.scale);
     this.ctx.save();
-    this.ctx.font = `normal ${fontSize}px sans-serif`;
+    this.ctx.font = `${weight} ${fontSize}px sans-serif`;
     const measured = this.ctx.measureText?.(value)?.width;
     this.ctx.restore();
     return Number.isFinite(measured) ? measured : Array.from(value).reduce((width, glyph) =>
       width + fontSize * (/[^\x00-\xff]/.test(glyph) ? 1 : .6), 0);
   }
 
-  fitText(value, width, size) {
+  fitText(value, width, size, weight = 'normal') {
     let result = String(value);
-    if (this.textWidth(result, size) <= width) return result;
-    while (result && this.textWidth(result + '…', size) > width) result = Array.from(result).slice(0, -1).join('');
+    if (this.textWidth(result, size, weight) <= width) return result;
+    while (result && this.textWidth(result + '…', size, weight) > width) result = Array.from(result).slice(0, -1).join('');
     return result + '…';
   }
 

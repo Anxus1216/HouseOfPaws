@@ -68,7 +68,7 @@ test('growth copy reports each pet actual daily balance, cap and full level', ()
   pet.xp = 135;
   pet.dailyGrowth.earned = 80;
   assert.deepEqual(growthSummary(pet, now), {
-    progress: '距 Lv.6 还差 65 成长', today: '今日成长 80/100',
+    progress: '还差65成长', today: '今日上限80/100', ratio: 135 / 200, dailyCapped: false,
   });
   pet.dailyGrowth.earned = 99;
   pet.clean = 50;
@@ -76,7 +76,7 @@ test('growth copy reports each pet actual daily balance, cap and full level', ()
   assert.equal(careGrowthFeedback(pet, 1, now), '成长 +1');
   assert.equal(care(state, 'wash', now).xp, 0);
   assert.equal(careGrowthFeedback(pet, 0, now), '今日成长已满，照料仍有效');
-  assert.equal(growthSummary(pet, now + 86400000).today, '今日成长 0/100');
+  assert.equal(growthSummary(pet, now + 86400000).today, '今日上限0/100');
   pet.level = 99;
   pet.xp = 0;
   assert.equal(growthSummary(pet, now).progress, '已满级');

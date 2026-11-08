@@ -902,11 +902,11 @@ test('home renders matching care sprite and speech before and after expiry', asy
   scene.home(state, ui);
   assert.deepEqual(pose, { expression: 'sleepy', action: 'rest' });
   assert.ok(text.includes('休息中，补充精力～'));
-  assert.ok(text.some(value => String(value).includes('今日成长 0/100')));
+  assert.ok(text.some(value => String(value).includes('今日上限0/100')));
   state.pets.cat.dailyGrowth.earned = 100;
   text.length = 0;
   scene.home(state, ui);
-  assert.ok(text.some(value => String(value).includes('今日成长 100/100')));
+  assert.ok(text.some(value => String(value).includes('今日成长已达上限')));
   ui.expressionUntil = Date.now() - 1;
   text.length = 0;
   scene.home(state, ui);
