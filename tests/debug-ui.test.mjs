@@ -39,8 +39,12 @@ test('settings entry, numeric keypad, save and disabled mode work through touch 
   tapId('sound_toggle');
   assert.equal(game.state.soundEnabled, false);
   assert.equal(stored.paw_house_save_v1.soundEnabled, false);
+  assert.equal(stored.paw_house_save_v1.musicEnabled, true);
+  tapId('music_toggle');
+  assert.equal(stored.paw_house_save_v1.musicEnabled, false);
   tapId('sound_toggle');
   assert.equal(game.state.soundEnabled, true);
+  assert.equal(game.state.musicEnabled, false);
   tapId('debug_open');
   assert.equal(game.ui.debugDraft.petId, null);
   tapId('debug_field:coins');
@@ -94,7 +98,7 @@ test('settings entry, numeric keypad, save and disabled mode work through touch 
   assert.equal(game.ui.debugEditor, null);
 });
 
-test('settings switch keeps one tappable row in both debug modes and screen heights', async () => {
+test('both audio switches remain independently tappable across debug modes and screen heights', async () => {
   const { default: Scene } = await import('../js/scene.js');
   for (const height of [680, 844]) {
     for (const debugEnabled of [false, true]) {
@@ -110,7 +114,7 @@ test('settings switch keeps one tappable row in both debug modes and screen heig
         scene.box = (x, y, w, h, radius, fill) => { boxes.push({ x, y, w, h, fill }); };
         scene.circle = (x, y, radius, fill) => { circles.push({ x, y, radius, fill }); };
         scene.line = () => {};
-        scene.settings({ soundEnabled }, { debugEnabled });
+        scene.settings({ soundEnabled, musicEnabled: !soundEnabled }, { debugEnabled });
         const switchHit = scene.buttons.find(button => button.id === 'sound_toggle');
         const track = boxes.find(box => box.w === 53 && box.h === 31);
         assert.ok(switchHit && track);
@@ -118,9 +122,16 @@ test('settings switch keeps one tappable row in both debug modes and screen heig
         assert.equal(switchHit.h, 65);
         assert.equal(scene.hit(track.x + track.w / 2, track.y + track.h / 2), 'sound_toggle');
         assert.equal(track.fill, soundEnabled ? '#55B79B' : '#D9D8D0');
+        const musicHit = scene.buttons.find(button => button.id === 'music_toggle');
+        assert.equal(musicHit.h, switchHit.h);
+        assert.ok(musicHit.y >= switchHit.y + switchHit.h);
+        assert.ok(musicHit.y + musicHit.h <= height);
+        assert.equal(scene.hit(musicHit.x + musicHit.w / 2, musicHit.y + musicHit.h / 2), 'music_toggle');
+        assert.equal(boxes.filter(box => box.w === 53 && box.h === 31)[1].fill,
+          soundEnabled ? '#D9D8D0' : '#55B79B');
         const thumb = circles.find(circle => circle.radius === 12.5);
         assert.equal(thumb?.x, soundEnabled ? 318.5 : 296.5);
-        assert.deepEqual(labels.filter(label => ['音效', '已开启', '已关闭', '开启', '关闭'].includes(label)), ['音效']);
+        assert.ok(labels.includes('音效') && labels.includes('背景音乐'));
         assert.equal(scene.buttons.some(button => button.id === 'debug_open'), debugEnabled);
         assert.equal(labels.includes('开发调试已开启'), debugEnabled);
         assert.ok(switchHit.y >= 0 && switchHit.y + switchHit.h <= height);

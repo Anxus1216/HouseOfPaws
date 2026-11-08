@@ -4,6 +4,7 @@ import './render.js';
 import { createHomeDrawers, setDrawerOpen, finishHomeDrawers, homeDrawersAnimating, drawerProgress } from './home-drawers.js';
 import Scene from './scene.js';
 import { CARE_ACTIONS } from './care-actions.js';
+import { GameAudio } from './game-audio.js';
 import { ACTION_SPEECH, FEEDBACK_MS } from './pet-display.js';
 import { DEBUG_ENABLED } from './debug-config.generated.js';
 import { createDebugDraft, draftChanged, commitDebugDraft, PET_FIELDS } from './debug-editor.js';
@@ -29,6 +30,10 @@ const STAT_LABELS = { hunger: '饱腹', clean: '清洁', happy: '快乐', energy
 // Idle pet scenes need fewer redraws; 50 ms gives them a 20 FPS cap.
 const PET_ANIMATION_INTERVAL_MS = 50;
 const PRESS_FALLBACK_MS = 500;
+const GAME_DURATION_SECONDS = 20;
+const GAME_WARNING_SECONDS = 3;
+const CARE_LEVEL_DELAY_MS = 220;
+const GAME_LEVEL_DELAY_MS = 900;
 
 export default class Main {
   constructor(options = {}) {
@@ -42,7 +47,7 @@ export default class Main {
     this.cachedPlayerProfile = this.loadPlayerProfile();
     this.ui = { pageTransition: createTransition('home', { durationMs: options.transitionDurationMs }), careFeedback: null, careReason: null, persistenceWarning: null, homeDrawers: createHomeDrawers(), page: 'home', speech: '', toast: '', toastUntil: 0,
       playerProfile: null, profileAuthAvailable: typeof wx.createUserInfoButton === 'function',
-      playing: false, paused: false, score: 0, remaining: 20, stars: [], basketX: 195,
+      playing: false, paused: false, score: 0, remaining: GAME_DURATION_SECONDS, stars: [], basketX: 195,
       gameOutcome: null, quitConfirm: false,
       guideHoldUntil: 0, showSettings: false,
       adoptionConfirmId: null,
@@ -58,7 +63,10 @@ export default class Main {
     this.lastCareAt = 0;
     this.coinWayTouch = null;
     this.pressExpiresAt = 0;
-    this.sounds = {};
+    this.audio = new GameAudio(wx, { now: this.now, warn: logWarn });
+    this.audioInterrupted = false;
+    this.pendingLevelAt = 0;
+    this.resultMusicAt = 0;
     this.profileAuthButton = null;
     this.profileAuthListener = null;
     this.profileAuthRect = '';
@@ -85,6 +93,8 @@ export default class Main {
       this.hideProfileAuthButton();
       this.cancelTouch();
       if (this.ui.playing) this.ui.paused = true;
+      this.pendingLevelAt = 0;
+      this.syncAudio();
       logInfo('app.hidden', { gamePaused: this.ui.playing });
       this.save();
     });
@@ -98,10 +108,22 @@ export default class Main {
       }
       this.lastFrame = this.now();
       this.visible = true;
+      this.syncAudio();
       if (this.cachedPlayerProfile) this.refreshPlayerProfile();
       this.needsDraw = true;
       logInfo('app.shown', { gamePaused: this.ui.playing && this.ui.paused });
       this.save();
+    });
+    wx.onAudioInterruptionBegin?.(() => {
+      this.audioInterrupted = true;
+      if (this.ui.playing) this.ui.paused = true;
+      this.pendingLevelAt = 0;
+      this.needsDraw = true;
+      this.syncAudio();
+    });
+    wx.onAudioInterruptionEnd?.(() => {
+      this.audioInterrupted = false;
+      this.syncAudio();
     });
     this.loop = this.loop.bind(this);
     requestAnimationFrame(this.loop);
@@ -126,6 +148,7 @@ export default class Main {
       finishTransition(this.ui.pageTransition);
       finishHomeDrawers(this.ui.homeDrawers);
       if (this.ui.playing) this.ui.paused = true;
+      this.syncAudio();
       this.debugTouch = null;
       this.coinWayTouch = null;
       this.ui.pressedId = null;
@@ -399,6 +422,7 @@ export default class Main {
       missing: card?.missing || 0 });
     this.notice(card?.kind === 'short' ? `还差 ${card.missing} 爪爪币` :
       '这位伙伴已经在小屋里啦');
+    if (card?.kind === 'short') this.playSound('soft_block');
   }
 
   openCoinWays(target) {
@@ -408,6 +432,7 @@ export default class Main {
     this.ui.coinWaysTarget = target;
     this.ui.coinWaysScroll = 0;
     this.needsDraw = true;
+    this.playSound('soft_block');
   }
 
   closeCoinWays() {
@@ -455,6 +480,9 @@ export default class Main {
     this.cancelTouch();
     this.clearHomeFeedback();
     this.ui.page = next;
+    this.pendingLevelAt = 0;
+    this.resultMusicAt = 0;
+    this.syncAudio();
     this.ui.adviceExplanation = null;
     this.needsDraw = true;
     return true;
@@ -479,21 +507,25 @@ export default class Main {
     this.requestPage(way.page);
   }
 
-  playSound(name) {
-    if (!this.state.soundEnabled || !wx.createInnerAudioContext) return;
-    try {
-      const existing = !!this.sounds[name];
-      if (!this.sounds[name]) {
-        const audio = wx.createInnerAudioContext();
-        audio.src = `audio/${name}.wav`;
-        audio.volume = .3;
-        this.sounds[name] = audio;
-      }
-      if (existing) this.sounds[name].stop();
-      this.sounds[name].play();
-    } catch (error) {
-      logWarn('audio.play_failed', { name, message: String(error) });
+  syncAudio(now = this.now()) {
+    const game = this.ui.page === 'game' && this.ui.playing;
+    const resting = this.ui.page === 'home' && this.ui.action === 'rest' && now < this.ui.expressionUntil;
+    this.audio.update({
+      musicEnabled: this.state.musicEnabled && now >= this.resultMusicAt,
+      soundEnabled: this.state.soundEnabled,
+      visible: this.visible && !this.audioInterrupted,
+      scene: game ? 'stars' : resting ? 'night' : 'home',
+      paused: game && this.ui.paused,
+      gamePosition: GAME_DURATION_SECONDS - this.ui.remaining,
+    }, now);
+    if (this.pendingLevelAt && now >= this.pendingLevelAt) {
+      this.pendingLevelAt = 0;
+      this.playSound('level');
     }
+  }
+
+  playSound(name, options) {
+    return this.audio.play(name, options);
   }
 
   coords(event) {
@@ -506,6 +538,7 @@ export default class Main {
   showRewardSpaceHelp(status, gift = false) {
     const help = rewardSpaceHelp(status, gift);
     this.ui.rewardHelp = help && { ...help, date: dayKey() };
+    if (help) this.playSound('soft_block');
     return !!help;
   }
 
@@ -521,6 +554,10 @@ export default class Main {
     this.needsDraw = true;
     settleTime(this.state, this.now());
     const id = this.scene.hit(p.x, p.y);
+    if (id) {
+      this.audio.unlock();
+      this.syncAudio();
+    }
     this.ui.pressedId = id;
     this.pressExpiresAt = id ? this.now() + PRESS_FALLBACK_MS : 0;
     if (this.ui.debugEditor) {
@@ -538,6 +575,12 @@ export default class Main {
     if (this.ui.showSettings) {
       if (id === 'sound_toggle') {
         this.state.soundEnabled = !this.state.soundEnabled;
+        if (!this.state.soundEnabled) this.pendingLevelAt = 0;
+        this.syncAudio();
+        this.save();
+      } else if (id === 'music_toggle') {
+        this.state.musicEnabled = !this.state.musicEnabled;
+        this.syncAudio();
         this.save();
       } else if (id === 'debug_open' && this.ui.debugEnabled) this.openDebugEditor();
       else if (id === 'settings_close') this.ui.showSettings = false;
@@ -573,6 +616,8 @@ export default class Main {
         this.ui.quitConfirm = false;
         this.ui.paused = false;
         this.lastFrame = this.now();
+        this.syncAudio();
+        this.playSound('game_resume');
         logInfo('game.resumed', { remaining: this.ui.remaining });
       } else if (id === 'quit_confirm_end' && this.ui.playing && this.ui.paused) {
         this.ui.quitConfirm = false;
@@ -580,23 +625,29 @@ export default class Main {
         this.ui.paused = false;
         this.ui.gameOutcome = { kind: 'aborted' };
         this.ui.toast = '';
+        this.syncAudio();
         logInfo('game.quit', { score: this.ui.score, remaining: this.ui.remaining });
       }
       return;
     }
     if (id === 'settings') {
       if (this.ui.playing) this.ui.paused = true;
+      this.syncAudio();
       this.ui.showSettings = true;
       this.hideProfileAuthButton();
       return;
     }
     if (id === 'pause_game' && this.ui.playing) {
       this.ui.paused = true;
+      this.syncAudio();
+      this.playSound('game_pause');
       logInfo('game.paused', { reason: 'button', remaining: this.ui.remaining });
       return;
     }
     if (id === 'resume_game' && this.ui.playing && this.ui.paused) {
       this.ui.paused = false; this.lastFrame = this.now();
+      this.syncAudio();
+      this.playSound('game_resume');
       logInfo('game.resumed', { remaining: this.ui.remaining });
       return;
     }
@@ -626,7 +677,8 @@ export default class Main {
     }
     if (id === 'home_care_toggle' || id === 'home_status_toggle') {
       const key = id === 'home_care_toggle' ? 'care' : 'status';
-      setDrawerOpen(this.ui.homeDrawers, key, !this.ui.homeDrawers[key].targetOpen);
+      const opening = !this.ui.homeDrawers[key].targetOpen;
+      if (setDrawerOpen(this.ui.homeDrawers, key, opening)) this.playSound(opening ? 'drawer_open' : 'drawer_close');
       if (this.ui.homeDrawers[key].targetOpen && recordDrawerGuideEvent(this.state, key)) this.save();
       this.cancelTouch();
       this.needsDraw = true;
@@ -646,7 +698,7 @@ export default class Main {
     if (id === 'home_advice') {
       if (!this.ui.showHomeAdvice) return;
       const advice = homeAdvice(this.state);
-      if (advice?.action) setDrawerOpen(this.ui.homeDrawers, 'care', true);
+      if (advice?.action && setDrawerOpen(this.ui.homeDrawers, 'care', true)) this.playSound('drawer_open');
       if (!advice) return;
       if (advice.kind === 'coins') {
         this.openCoinWays({ kind: 'care', action: advice.action });
@@ -696,12 +748,14 @@ export default class Main {
       this.requestPage('home'); this.ui.speech = ''; this.ui.expressionUntil = 0;
       this.ui.action = ''; this.ui.statDelta = '';
       this.ui.adviceExplanation = null;
+      this.playSound('pet_select');
       this.save(); return;
     }
     if (id === 'daily') {
       const status = giftClaimState(this.state);
       if (status.kind === 'claimable' && daily(this.state)) {
         logInfo('reward.daily_claimed', { coins: DAILY_GIFT_COINS, balance: this.state.coins });
+        this.playSound('daily_gift');
         this.notice(`领取成功：+${DAILY_GIFT_COINS} 爪爪币`); this.save();
       } else {
         logInfo('reward.daily_rejected', { reason: status.kind });
@@ -726,7 +780,7 @@ export default class Main {
       }
       if (result && result.reward) {
         if (recordGuideEvent(this.state, 'task_claim')) this.ui.guideHoldUntil = this.ui.toastUntil;
-        this.playSound('care'); this.save();
+        this.playSound('task_claim'); this.save();
       }
       return;
     }
@@ -743,7 +797,8 @@ export default class Main {
       this.ui.speech = guidedResponse && guideAdvanced ? guidedResponse :
         ['好喜欢你呀 ♡', '再摸摸我的头~', '今天也要开心哦！'][Math.floor(Math.random() * 3)];
       if (guideAdvanced) this.ui.guideHoldUntil = this.ui.expressionUntil;
-      this.playSound('care'); this.save();
+      this.syncAudio();
+      this.playSound('pet_tap'); this.save();
       return;
     }
     if (['feed', 'wash', 'play', 'rest'].includes(id)) {
@@ -765,6 +820,7 @@ export default class Main {
             careFullReason(result.block, id, Array.from(pet.name).length > 8 ? '它' : pet.name) : text;
           this.ui.careReason = { text, displayText, until: now + 2200 };
           this.notice(text);
+          if (result.block?.kind === 'energy_low' || result.block?.kind === 'insufficient_coins') this.playSound('soft_block');
         }
         if (!result.error) {
           this.lastCareAt = now;
@@ -797,7 +853,11 @@ export default class Main {
           });
           recordTask(this.state, 'care');
           if (recordGuideEvent(this.state, 'care_success')) this.ui.guideHoldUntil = this.ui.expressionUntil;
-          this.playSound(result.leveled ? 'level' : 'care'); this.save();
+          this.syncAudio(now);
+          const volume = result.leveled ? .7 : 1;
+          if (!this.playSound(`care_${id}`, { volume })) this.playSound('care', { volume });
+          if (result.leveled && this.state.soundEnabled) this.pendingLevelAt = now + CARE_LEVEL_DELAY_MS;
+          this.save();
         }
       }
     }
@@ -995,23 +1055,29 @@ export default class Main {
 
   startGame() {
     this.lastFrame = this.now();
+    this.pendingLevelAt = 0;
+    this.resultMusicAt = 0;
     this.ui.playing = true;
     this.ui.paused = false;
     this.ui.score = 0;
-    this.ui.remaining = 20;
+    this.ui.remaining = GAME_DURATION_SECONDS;
     this.ui.spawnTimer = 0;
     this.ui.stars = [];
     this.ui.basketX = 195;
     this.ui.gameOutcome = null;
     this.ui.quitConfirm = false;
+    this.audio.resetRound();
+    this.syncAudio();
+    this.playSound('game_start');
     logInfo('game.started', { pet: this.state.active });
   }
 
   updateGame(dt) {
     const ui = this.ui;
     if (!ui.playing || ui.paused || ui.page !== 'game' || !Number.isFinite(dt) || dt <= 0) return;
-    const elapsed = Math.min(dt, ui.remaining);
-    ui.remaining = Math.max(0, ui.remaining - dt);
+    const previousRemaining = ui.remaining;
+    const elapsed = Math.min(dt, previousRemaining);
+    ui.remaining = Math.max(0, previousRemaining - dt);
     const field = this.scene.gameField();
     const fieldBottom = field.bottom;
     const priorScore = ui.score;
@@ -1035,7 +1101,10 @@ export default class Main {
       });
       simulated += step;
     }
-    if (ui.score > priorScore) this.playSound('catch');
+    if (ui.score > priorScore) this.audio.catchStar();
+    else if (previousRemaining > GAME_WARNING_SECONDS && ui.remaining > 0 && ui.remaining <= GAME_WARNING_SECONDS) {
+      this.playSound('game_time_low');
+    }
     if (ui.remaining <= 0) {
       ui.playing = false;
       ui.remaining = 0;
@@ -1045,10 +1114,15 @@ export default class Main {
         coins: reward.coins, xp: reward.xp, leveled: reward.leveled });
       const taskCompleted = recordTask(this.state, 'game', now);
       recordGuideEvent(this.state, 'game_complete', now);
-      if (reward.leveled) this.playSound('level');
       const pet = this.state.pets[this.state.active];
       ui.gameOutcome = completedGameOutcome(ui.score, reward, pet, taskCompleted, now);
       this.needsDraw = true;
+      if (this.state.soundEnabled) {
+        this.resultMusicAt = now + GAME_LEVEL_DELAY_MS;
+        if (reward.leveled) this.pendingLevelAt = this.resultMusicAt;
+      }
+      this.syncAudio(now);
+      this.playSound(ui.score > 0 ? 'game_end' : 'game_end_quiet');
       ui.toast = '';
       ui.toastUntil = 0;
       this.save();
@@ -1117,6 +1191,7 @@ export default class Main {
       homeDrawersAnimating(this.ui.homeDrawers, now);
     const wasAnimated = this.isAnimated();
     this.updateGame(dt);
+    this.syncAudio(now);
     const guideAnimating = !!this.scene.visibleGuide(this.state, this.ui, now);
     const animated = wasAnimated || this.isAnimated() || guideAnimating;
     const gameAnimating = this.ui.page === 'game' && this.ui.playing;

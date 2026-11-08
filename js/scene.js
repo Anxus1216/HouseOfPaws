@@ -1631,37 +1631,45 @@ export default class Scene {
       '#ACD1D9', 11);
   }
 
+  audioSetting(id, label, y, enabled) {
+    this.fabricPanel(51, y, 288, 65, 16, '#FFF9F0', false);
+    if (id === 'sound_toggle') {
+      this.polygon([[62, y + 27], [69, y + 27], [76, y + 21],
+        [76, y + 42], [69, y + 36], [62, y + 36]], C.brown);
+      this.curve(79, y + 24, 87, y + 31, 79, y + 39, C.brown, 2);
+    } else {
+      this.text('♪', 74, y + 32, 22, C.brown, 'center', 'bold');
+    }
+    this.text(label, 98, y + 32, 15, C.ink, 'left', 'bold');
+    this.box(281, y + 16, 53, 31, 16, this.pressedId === id ?
+      (enabled ? '#2D8875' : '#BBBAB0') : (enabled ? '#55B79B' : '#D9D8D0'));
+    this.circle(enabled ? 318.5 : 296.5, y + 31.5, 12.5, '#FFFAF2');
+    this.buttons.push({ id, x: 51, y, w: 288, h: 65 });
+  }
+
   settings(state, ui) {
     this.dim(); this.buttons = [];
     const enabled = !!ui.debugEnabled;
-    const height = enabled ? 338 : 274;
+    const height = enabled ? 410 : 346;
     const y = this.h / 2 - height / 2;
     this.fabricPanel(31, y, 328, height, 24);
     this.text('小屋设置', 195, y + 45, 21, C.ink, 'center', 'bold');
     this.roundIconButton('settings_close', 318, y + 39, 17, '×');
-    this.fabricPanel(51, y + 78, 288, 65, 16, '#FFF9F0', false);
-    this.polygon([[62, y + 105], [69, y + 105], [76, y + 99],
-      [76, y + 120], [69, y + 114], [62, y + 114]], C.brown);
-    this.curve(79, y + 102, 87, y + 109, 79, y + 117, C.brown, 2);
-    this.text('音效', 98, y + 110, 15, C.ink, 'left', 'bold');
-    this.box(281, y + 94, 53, 31, 16, this.pressedId === 'sound_toggle' ?
-      (state.soundEnabled ? '#2D8875' : '#BBBAB0') :
-      (state.soundEnabled ? '#55B79B' : '#D9D8D0'));
-    this.circle(state.soundEnabled ? 318.5 : 296.5, y + 109.5, 12.5, '#FFFAF2');
-    this.buttons.push({ id: 'sound_toggle', x: 51, y: y + 78, w: 288, h: 65 });
+    this.audioSetting('sound_toggle', '音效', y + 78, state.soundEnabled);
+    this.audioSetting('music_toggle', '背景音乐', y + 150, state.musicEnabled);
     if (enabled) {
-      this.fabricPanel(51, y + 159, 288, 52, 16,
+      this.fabricPanel(51, y + 231, 288, 52, 16,
         this.pressedId === 'debug_open' ? PRESS.row : '#F5E9D9', false);
-      this.text('⚙', 74, y + 185, 21, C.muted, 'center');
-      this.text('调试模式', 98, y + 185, 15, C.ink, 'left', 'bold');
-      this.text('›', 316, y + 185, 23, C.brown, 'center');
-      this.buttons.push({ id: 'debug_open', x: 51, y: y + 159, w: 288, h: 52 });
-      this.readableText('开发调试已开启', 58, y + 238, 11, C.coral, 'left', 'bold');
+      this.text('⚙', 74, y + 257, 21, C.muted, 'center');
+      this.text('调试模式', 98, y + 257, 15, C.ink, 'left', 'bold');
+      this.text('›', 316, y + 257, 23, C.brown, 'center');
+      this.buttons.push({ id: 'debug_open', x: 51, y: y + 231, w: 288, h: 52 });
+      this.readableText('开发调试已开启', 58, y + 310, 11, C.coral, 'left', 'bold');
     }
     this.readableText('游戏进度会保存在当前设备。',
-      58, y + (enabled ? 269 : 185), 12, C.brown);
+      58, y + (enabled ? 341 : 257), 12, C.brown);
     this.readableText('重新安装或清除数据后，存档无法恢复。', 58,
-      y + (enabled ? 295 : 211), 11, C.muted);
+      y + (enabled ? 367 : 283), 11, C.muted);
   }
 
   debugRows(state, ui) {

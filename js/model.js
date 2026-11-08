@@ -82,7 +82,7 @@ export function initialState(now = Date.now()) {
   return { version: SAVE_VERSION, pets: {}, active: null, coins: 60, lastSeen: now,
     lastDaily: '', totalActions: 0, tasks: freshTasks(now),
     guide: freshGuide('await_adoption'),
-    soundEnabled: true };
+    soundEnabled: true, musicEnabled: true };
 }
 
 export function hydrate(raw, now = Date.now()) {
@@ -117,6 +117,7 @@ export function hydrate(raw, now = Date.now()) {
     state.guide = freshGuide('disabled');
   }
   state.soundEnabled = typeof raw.soundEnabled === 'boolean' ? raw.soundEnabled : true;
+  state.musicEnabled = typeof raw.musicEnabled === 'boolean' ? raw.musicEnabled : state.soundEnabled;
   if (raw.tasks && typeof raw.tasks === 'object' &&
       dateOrder(raw.tasks.date) >= dateOrder(dayKey(now))) {
     state.tasks.date = raw.tasks.date;

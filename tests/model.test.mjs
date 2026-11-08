@@ -288,6 +288,13 @@ test('three tasks record real events and each reward is claimed once', () => {
   assert.equal(claimTask(loaded, 'game', now), null);
 });
 
+test('old muted saves inherit music mute and saved music settings stay independent', () => {
+  assert.equal(initialState().musicEnabled, true);
+  assert.equal(hydrate({ soundEnabled: false }).musicEnabled, false);
+  assert.equal(hydrate({ soundEnabled: false, musicEnabled: true }).musicEnabled, true);
+  assert.equal(hydrate({ soundEnabled: true, musicEnabled: false }).musicEnabled, false);
+});
+
 test('tasks reset on local date change and damaged progress is repaired', () => {
   const today = new Date(2026, 9, 14, 10).getTime();
   const tomorrow = new Date(2026, 9, 15, 10).getTime();

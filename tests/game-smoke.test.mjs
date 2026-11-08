@@ -24,7 +24,8 @@ test('game starts, adopts, navigates and renders each screen', async () => {
     onTouchEnd: callback => { handlers.end = callback; },
     onHide: callback => { handlers.hide = callback; },
     onShow: callback => { handlers.show = callback; },
-    createInnerAudioContext: () => ({ src: '', volume: 1, stop() {}, play() { played.push(this.src); } }),
+    createInnerAudioContext: () => ({ src: '', volume: 1, stop() {}, pause() {},
+      play() { played.push(this.src); } }),
   };
   const { default: Main } = await import('../js/main.js');
   let transitionNow = Date.now();
@@ -44,9 +45,12 @@ test('game starts, adopts, navigates and renders each screen', async () => {
     handlers.end({ changedTouches: [point] });
   };
   assert.equal(typeof handlers.touch, 'function');
+  const playedSfx = () => played.filter(src => src.startsWith('audio/sfx/'));
+  assert.deepEqual(played, [], 'audio starts only after a user gesture');
   tapId('adopt_selected');
   assert.equal(saved.paw_house_save_v1.active, 'cat');
-  assert.ok(played.includes('audio/adopt.wav'));
+  assert.ok(played.includes('audio/bgm/bgm_home.mp3'));
+  assert.ok(playedSfx().includes('audio/sfx/adopt.wav'));
   game.ui.guideHoldUntil = Date.now() - 1;
   tapId('guide_skip');
   assert.equal(saved.paw_house_save_v1.guide.phase, 'skipped');
@@ -94,6 +98,7 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   assert.equal(game.ui.showHomeAdvice, false, 'manual dismissal persists across page changes');
   tapId('feed');
   assert.ok(saved.paw_house_save_v1.pets.cat.hunger > 99.99);
+  assert.equal(playedSfx().at(-1), 'audio/sfx/care_feed.wav');
   assert.match(game.ui.statDelta, /饱腹 \+24 · 快乐 \+3/);
   assert.match(game.ui.statDelta, /爪爪币 -5\|成长 \+10/);
   assert.ok(game.ui.expressionUntil - Date.now() > 2000);
@@ -117,6 +122,7 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   tapId('wash');
   assert.match(game.ui.statDelta, /今日成长已满，照料仍有效/);
   tapId('pet_tap');
+  assert.equal(playedSfx().at(-1), 'audio/sfx/pet_tap.wav');
   assert.equal(game.state.tasks.progress.interact, 1);
   game.draw();
   const homeLabels = [];
@@ -143,6 +149,7 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   game.state.coins = coinsBeforeBlock;
   tapId('claim_care');
   assert.equal(game.ui.toast, '领取成功：+10 爪爪币');
+  assert.equal(playedSfx().at(-1), 'audio/sfx/task_claim.wav');
   tapId('claim_interact');
   tapId('task_go_game');
   assert.equal(game.ui.page, 'game');
@@ -215,10 +222,14 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   assert.equal(game.state.coins, 0);
   tapId('select_cat');
   assert.equal(game.state.active, 'cat');
+  assert.equal(playedSfx().at(-1), 'audio/sfx/pet_select.wav');
   tapId('nav_game');
   tapId('start_game');
   assert.equal(game.ui.playing, true);
+  assert.ok(played.includes('audio/bgm/bgm_stars.mp3'));
+  assert.equal(playedSfx().at(-1), 'audio/sfx/game_start.wav');
   tapId('pause_game');
+  assert.equal(playedSfx().at(-1), 'audio/sfx/game_pause.wav');
   const remaining = game.ui.remaining;
   game.updateGame(5);
   assert.equal(game.ui.remaining, remaining);
@@ -232,19 +243,20 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   tapId('quit_game');
   tapId('quit_confirm_continue');
   assert.equal(game.ui.paused, false);
+  assert.equal(playedSfx().at(-1), 'audio/sfx/game_resume.wav');
   tapId('nav_profile');
   tapId('settings');
   assert.equal(game.ui.paused, true);
   tapId('sound_toggle');
   assert.equal(game.state.soundEnabled, false);
-  const playedBeforeMute = played.length;
+  const playedBeforeMute = playedSfx().length;
   tapId('settings_close');
   tapId('nav_game');
   tapId('resume_game');
   handlers.move({ touches: [clientPoint(150, 600)] });
   assert.equal(game.ui.basketX, 150);
   game.updateGame(21);
-  assert.equal(played.length, playedBeforeMute);
+  assert.equal(playedSfx().length, playedBeforeMute);
   assert.equal(game.ui.playing, false);
   assert.equal(game.ui.gameOutcome.kind, 'completed');
   assert.equal(game.ui.gameOutcome.stars, game.ui.score);
@@ -252,6 +264,10 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   assert.equal(game.state.tasks.progress.game, 1);
   tapId('game_task_reward');
   assert.equal(game.ui.page, 'tasks');
+  tapId('nav_profile');
+  tapId('settings');
+  tapId('sound_toggle');
+  tapId('settings_close');
   tapId('nav_game');
   tapId('start_game');
   assert.equal(game.ui.gameOutcome, null, 'replay clears the previous result');
@@ -266,13 +282,17 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   game.ui.spawnTimer = 100;
   game.ui.stars = [{ x: 195, y: game.scene.gameField().bottom - 60, speed: 250 }];
   game.updateGame(2);
+  assert.match(playedSfx().at(-1), /^audio\/sfx\/catch_[abc]\.wav$/);
   assert.equal(game.ui.remaining, 18, 'a dropped frame counts its real elapsed time');
   assert.equal(game.ui.score, 1, 'a star crossing the basket is caught');
   game.ui.paused = true;
   game.updateGame(10);
   assert.equal(game.ui.remaining, 18, 'paused time is excluded');
   game.ui.paused = false;
-  game.updateGame(18);
+  game.updateGame(15);
+  assert.equal(playedSfx().at(-1), 'audio/sfx/game_time_low.wav');
+  game.updateGame(3);
+  assert.equal(playedSfx().at(-1), 'audio/sfx/game_end.wav');
   assert.equal(game.ui.remaining, 0);
   assert.equal(game.ui.playing, false);
   assert.equal(game.ui.gameOutcome.growthReason, 'daily_cap');
@@ -303,6 +323,7 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   game.loop();
   assert.equal(game.ui.gameOutcome.kind, 'completed');
   assert.equal(game.ui.gameOutcome.stars, 0);
+  assert.equal(playedSfx().at(-1), 'audio/sfx/game_end_quiet.wav');
   assert.equal(game.ui.gameOutcome.growthReason, 'no_stars');
   assert.equal(game.ui.gameOutcome.coins, 0);
   assert.ok(game.scene.buttons.some(button => button.id === 'game_return_home'),
