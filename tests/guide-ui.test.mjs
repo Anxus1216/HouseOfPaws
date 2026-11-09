@@ -1,4 +1,7 @@
 import { setDrawerOpen } from '../js/home-drawers.js';
+import { recordDrawerGuideEvent, recordGuideEvent } from '../js/guide.js';
+import { adopt, initialState } from '../js/model.js';
+import Scene from '../js/scene.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -117,6 +120,48 @@ test('short-screen guide leaves the highlighted pet clear and advances on a cent
   assert.ok(guideCard.x + guideCard.w < status.x, 'the status entry remains clear');
   tap(pet);
   assert.equal(game.state.guide.phase, 'care');
+});
+
+test('guide starts each sentence on a new line without covering the controls', () => {
+  const now = new Date(2026, 0, 1, 12).getTime();
+  for (const [width, height] of [[320, 568], [390, 844]]) {
+    const state = initialState(now);
+    adopt(state, 'cat', now);
+    recordGuideEvent(state, 'adopt', now);
+    recordGuideEvent(state, 'pet_tap', now);
+    const context = new Proxy({}, { get: () => () => {} });
+    const scene = new Scene(context, { width, height });
+    scene.setViewport({ width, height, top: 24, bottom: 34, menuBottom: 60, left: 0, right: 0 });
+    const rendered = [];
+    scene.readableText = (text, x, y) => rendered.push({ text, x, y });
+    const draw = (page = 'home') => {
+      rendered.length = 0;
+      scene.draw(state, { page, frameNow: now });
+    };
+    const checkHomeCard = (firstSentence, secondSentence, targetId) => {
+      const first = rendered.findIndex(({ text }) => text === firstSentence);
+      assert.notEqual(first, -1, 'the first sentence fits on its own line');
+      assert.equal(rendered[first + 1].text, secondSentence);
+      assert.ok(rendered[first + 1].y > rendered[first].y);
+      const skip = scene.buttons.find(({ id }) => id === 'guide_skip');
+      const target = scene.buttons.find(({ id }) => id === targetId);
+      assert.ok(skip.y > rendered[first + 1].y);
+      assert.equal(scene.hit(target.x + target.w / 2, target.y + target.h / 2), targetId);
+    };
+    draw();
+    checkHomeCard('照料篮里有喂食、清洁、玩耍和休息。', '点下方按钮，四种照料会向右展开。', 'home_care_toggle');
+    recordDrawerGuideEvent(state, 'care');
+    draw();
+    checkHomeCard('小猫卡片里是奶糖的状态。', '点击向下展开四项数值，再点一次向上收回。', 'home_status_toggle');
+
+    state.guide.phase = 'outro';
+    draw('tasks');
+    const question = rendered.findIndex(({ text }) => text === '想继续攒爪爪币？');
+    assert.notEqual(question, -1);
+    assert.equal(rendered[question + 1].text, '试试 20 秒接星星');
+    assert.ok(rendered[question + 1].y > rendered[question].y);
+    assert.ok(scene.buttons.find(({ id }) => id === 'guide_game').y > rendered[question + 1].y);
+  }
 });
 
 test('WeChat empty storage is a new player, while an invalid stored value is not', async () => {

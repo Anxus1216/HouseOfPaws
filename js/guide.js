@@ -124,7 +124,7 @@ export function drawerTutorialView(state, ui, now = Date.now()) {
     return {
       phase: 'care', step: 2, substep: 2, label: '2 / 2 · 看看状态卡',
       title: '看看状态卡',
-      text: `小猫卡片里是${name}的状态。点击后向下展开四项数值，再次点击，就会向上收回。`,
+      text: `小猫卡片里是${name}的状态。点击向下展开四项数值，再点一次向上收回。`,
       targetIds: ['home_status_toggle'],
     };
   }

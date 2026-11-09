@@ -89,6 +89,7 @@ const ANIMATION_CLIP_TOP_MARGIN = 10;
 // Scene animation time is measured in seconds; Date.now() is in milliseconds.
 const MILLISECONDS_PER_SECOND = 1000;
 const GUIDE_CARD = Object.freeze({ x: 32, width: 326, height: 82, radius: 16 });
+const GUIDE_LINE_HEIGHT = 17;
 const GUIDE_COLOR = Object.freeze({ fill: '#E7F4F6', label: '#2D6D7D',
   text: '#254A57', button: '#D6EDF1', focus: '#54A9BB' });
 
@@ -921,11 +922,11 @@ export default class Scene {
     return result + '…';
   }
 
-  wrapText(value, width, size = 11) {
+  wrapText(value, width, size = 11, weight = 'normal') {
     const lines = [];
     let current = '';
     for (const glyph of Array.from(String(value))) {
-      if (current && this.textWidth(current + glyph, size) > width) {
+      if (current && this.textWidth(current + glyph, size, weight) > width) {
         lines.push(current);
         current = '';
       }
@@ -1570,19 +1571,27 @@ export default class Scene {
     c.restore();
   }
 
+  guideTextLines(text, width, size, weight = 'normal') {
+    return text.replace(/([。！？!?]+)/g, '$1\n').split('\n')
+      .flatMap(sentence => this.wrapText(sentence.trim(), width, size, weight));
+  }
+
   guide(state, ui, now = Date.now()) {
     const view = this.visibleGuide(state, ui, now);
     if (!view) return;
     if (view.phase === 'outro') {
-      const y = this.h / 2 - 67;
-      this.fabricPanel(GUIDE_CARD.x, y, GUIDE_CARD.width, 134,
+      const lines = this.guideTextLines(view.text, GUIDE_CARD.width - 30, 12);
+      const extraHeight = Math.max(0, lines.length - 1) * GUIDE_LINE_HEIGHT;
+      const height = 134 + extraHeight;
+      const y = (this.h - height) / 2;
+      this.fabricPanel(GUIDE_CARD.x, y, GUIDE_CARD.width, height,
         GUIDE_CARD.radius, GUIDE_COLOR.fill);
       this.text(view.title, 195, y + 29, 17, GUIDE_COLOR.text, 'center', 'bold');
-      this.readableText(view.text, 195, y + 59,
-        12, GUIDE_COLOR.label, 'center');
-      this.button('guide_game', 48, y + 82, 140, 37, '去游戏', '#4E9EB0',
+      lines.forEach((line, index) => this.readableText(line, 195,
+        y + 59 + index * GUIDE_LINE_HEIGHT, 12, GUIDE_COLOR.label, 'center'));
+      this.button('guide_game', 48, y + 82 + extraHeight, 140, 37, '去游戏', '#4E9EB0',
         '#FFF', null, 14, { variant: 'guide' });
-      this.button('guide_finish', 202, y + 82, 140, 37, '知道了', '#F2FBFC', GUIDE_COLOR.label);
+      this.button('guide_finish', 202, y + 82 + extraHeight, 140, 37, '知道了', '#F2FBFC', GUIDE_COLOR.label);
       return;
     }
     if (ui.page === 'home') {
@@ -1590,23 +1599,19 @@ export default class Scene {
       return;
     }
     this.guideFocus(view.targetIds, ui.page, now);
-    const y = ui.page === 'home' ? this.homeLayout().sceneY : this.layout().sceneY;
+    const y = this.layout().sceneY;
+    const lines = this.guideTextLines(view.text, GUIDE_CARD.width - 30, 13, 'bold');
+    const height = GUIDE_CARD.height + Math.max(0, lines.length - 1) * GUIDE_LINE_HEIGHT;
     const c = this.ctx;
     c.save(); c.shadowColor = 'rgba(53,111,128,.2)'; c.shadowBlur = 18;
     c.shadowOffsetY = 7;
-    this.fabricPanel(GUIDE_CARD.x, y, GUIDE_CARD.width, GUIDE_CARD.height,
+    this.fabricPanel(GUIDE_CARD.x, y, GUIDE_CARD.width, height,
       GUIDE_CARD.radius, GUIDE_COLOR.fill);
     c.restore();
     this.readableText(view.label, GUIDE_CARD.x + 15, y + 21,
       11, GUIDE_COLOR.label, 'left', 'bold');
-    const split = view.text.length <= 15 ? view.text.length :
-      Math.ceil(view.text.length / 2);
-    const firstLine = view.text.slice(0, split);
-    const secondLine = view.text.slice(split);
-    this.readableText(firstLine, GUIDE_CARD.x + 15, y + (secondLine ? 46 : 53),
-      13, GUIDE_COLOR.text, 'left', 'bold');
-    if (secondLine) this.readableText(secondLine, GUIDE_CARD.x + 15, y + 67,
-      13, GUIDE_COLOR.text, 'left', 'bold');
+    lines.forEach((line, index) => this.readableText(line, GUIDE_CARD.x + 15,
+      y + 53 + index * GUIDE_LINE_HEIGHT, 13, GUIDE_COLOR.text, 'left', 'bold'));
     this.button('guide_skip', GUIDE_CARD.x + GUIDE_CARD.width - 111, y + 14,
       100, 30, '跳过引导', GUIDE_COLOR.button, GUIDE_COLOR.label, '#ACD1D9', 11);
   }
@@ -1616,8 +1621,8 @@ export default class Scene {
     const unit = layout.unit;
     const gap = 6 * unit;
     const textLayout = width => {
-      const lines = this.wrapText(view.text, width - 24 * unit, 13);
-      return { lines, height: (78 + lines.length * 17) * unit };
+      const lines = this.guideTextLines(view.text, width - 24 * unit, 13, 'bold');
+      return { lines, height: (78 + lines.length * GUIDE_LINE_HEIGHT) * unit };
     };
     let width = ui.homeDrawers?.status.targetOpen ? layout.feedback.w : layout.scene.w - 16 * unit;
     const x = layout.scene.x + 8 * unit;
@@ -1636,7 +1641,7 @@ export default class Scene {
     this.readableText(view.label, x + 12 * unit, y + 17 * unit, 11,
       GUIDE_COLOR.label, 'left', 'bold');
     lines.forEach((line, index) => this.readableText(line, x + 12 * unit,
-      y + (37 + index * 17) * unit, 13, GUIDE_COLOR.text, 'left', 'bold'));
+      y + (37 + index * GUIDE_LINE_HEIGHT) * unit, 13, GUIDE_COLOR.text, 'left', 'bold'));
     this.button('guide_skip', x + width - 112 * unit, y + height - 46 * unit,
       100 * unit, 44 * unit, '跳过引导', GUIDE_COLOR.button, GUIDE_COLOR.label,
       '#ACD1D9', 11);
