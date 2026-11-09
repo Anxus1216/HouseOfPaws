@@ -1614,11 +1614,22 @@ export default class Scene {
   homeGuide(view, ui, now) {
     const layout = this.homeGeometry();
     const unit = layout.unit;
-    const width = ui.homeDrawers?.status.targetOpen ? layout.feedback.w : layout.scene.w - 16 * unit;
+    const gap = 6 * unit;
+    const textLayout = width => {
+      const lines = this.wrapText(view.text, width - 24 * unit, 13);
+      return { lines, height: (78 + lines.length * 17) * unit };
+    };
+    let width = ui.homeDrawers?.status.targetOpen ? layout.feedback.w : layout.scene.w - 16 * unit;
     const x = layout.scene.x + 8 * unit;
-    const lines = this.wrapText(view.text, width - 24 * unit, 13);
-    const height = (78 + lines.length * 17) * unit;
-    const y = layout.carePanel.y - height - 6 * unit;
+    let { lines, height } = textLayout(width);
+    let y = layout.carePanel.y - height - gap;
+    const petCenterY = layout.pet.y + layout.pet.h / 2;
+    if (view.targetIds.includes('pet_tap') && y <= petCenterY && petCenterY <= y + height) {
+      // On short screens the lower card can block the highlighted pet's center.
+      width = layout.feedback.w;
+      ({ lines, height } = textLayout(width));
+      y = layout.pet.y - height - gap;
+    }
     this.guideFocus(view.targetIds, 'home', now);
     this.fabricPanel(x, y, width, height, 16 * unit, GUIDE_COLOR.fill);
     this.buttons.push({ id: 'home_panel', x, y, w: width, h: height });

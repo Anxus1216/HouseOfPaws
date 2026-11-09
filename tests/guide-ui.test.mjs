@@ -78,6 +78,47 @@ test('guide follows real taps while the home hint replaces growth details', asyn
   assert.equal(visible('guide_skip'), undefined);
 });
 
+test('short-screen guide leaves the highlighted pet clear and advances on a center tap', async () => {
+  const context = new Proxy({}, { get: () => () => {} });
+  const handlers = {};
+  const canvas = { width: 320, height: 568, getContext: () => context };
+  globalThis.requestAnimationFrame = () => 1;
+  globalThis.wx = {
+    createCanvas: () => canvas,
+    getWindowInfo: () => ({ windowWidth: 320, windowHeight: 568, screenTop: 0,
+      pixelRatio: 1, safeArea: { left: 0, right: 320, top: 24, bottom: 534 } }),
+    getMenuButtonBoundingClientRect: () => ({ top: 32, bottom: 60 }),
+    getStorageSync: () => '', setStorageSync() {},
+    onTouchStart: callback => { handlers.start = callback; },
+    onTouchEnd: callback => { handlers.end = callback; }, onTouchMove() {},
+  };
+  globalThis.GameGlobal = { canvas, viewport: { width: 320, height: 568,
+    left: 0, right: 0, top: 24, bottom: 34, menuBottom: 60, pixelRatio: 1 } };
+  const { default: Main } = await import('../js/main.js');
+  const game = new Main();
+  const findButton = id => game.scene.buttons.find(button => button.id === id);
+  const tap = button => {
+    assert.ok(button);
+    const point = { clientX: game.scene.offsetX + (button.x + button.w / 2) * game.scene.scale,
+      clientY: game.scene.offsetY + (button.y + button.h / 2) * game.scene.scale };
+    handlers.start({ touches: [point] });
+    handlers.end({ changedTouches: [point] });
+  };
+
+  game.draw();
+  tap(findButton('adopt_selected'));
+  assert.equal(game.state.guide.phase, 'interact');
+  game.ui.guideHoldUntil = 0;
+  game.draw();
+  const pet = findButton('pet_tap');
+  const guideCard = game.scene.buttons.findLast(button => button.id === 'home_panel');
+  const status = findButton('home_status_toggle');
+  assert.ok(guideCard.y + guideCard.h < pet.y, 'the card stays above the entire highlighted pet');
+  assert.ok(guideCard.x + guideCard.w < status.x, 'the status entry remains clear');
+  tap(pet);
+  assert.equal(game.state.guide.phase, 'care');
+});
+
 test('WeChat empty storage is a new player, while an invalid stored value is not', async () => {
   const context = new Proxy({}, { get: () => () => {} });
   const { default: Main } = await import('../js/main.js');
