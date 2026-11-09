@@ -1102,7 +1102,7 @@ export default class Main {
       simulated += step;
     }
     if (ui.score > priorScore) this.audio.catchStar();
-    else if (previousRemaining > GAME_WARNING_SECONDS && ui.remaining > 0 && ui.remaining <= GAME_WARNING_SECONDS) {
+    if (previousRemaining > GAME_WARNING_SECONDS && ui.remaining > 0 && ui.remaining <= GAME_WARNING_SECONDS) {
       this.playSound('game_time_low');
     }
     if (ui.remaining <= 0) {

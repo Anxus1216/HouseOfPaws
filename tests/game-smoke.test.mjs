@@ -289,8 +289,17 @@ test('game starts, adopts, navigates and renders each screen', async () => {
   game.updateGame(10);
   assert.equal(game.ui.remaining, 18, 'paused time is excluded');
   game.ui.paused = false;
+  transitionNow += 15000;
+  game.ui.stars = [{ x: 195, y: game.scene.gameField().bottom - 60, speed: 250 }];
+  const soundsBeforeWarning = playedSfx().length;
   game.updateGame(15);
-  assert.equal(playedSfx().at(-1), 'audio/sfx/game_time_low.wav');
+  assert.equal(game.ui.score, 2, 'a star is caught in the frame that reaches the warning threshold');
+  const thresholdSounds = playedSfx().slice(soundsBeforeWarning);
+  assert.match(thresholdSounds[0], /^audio\/sfx\/catch_[abc]\.wav$/);
+  assert.deepEqual(thresholdSounds.slice(1), ['audio/sfx/game_time_low.wav']);
+  game.updateGame(.1);
+  assert.deepEqual(playedSfx().slice(soundsBeforeWarning), thresholdSounds,
+    'the countdown warning plays only when crossing the threshold');
   game.updateGame(3);
   assert.equal(playedSfx().at(-1), 'audio/sfx/game_end.wav');
   assert.equal(game.ui.remaining, 0);
