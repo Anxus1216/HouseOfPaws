@@ -4,6 +4,7 @@
   "scripts": {
     "debug:prepare": "node scripts/prepare-debug-config.mjs",
     "test": "node --test tests/*.test.mjs",
-    "release:check": "node scripts/prepare-debug-config.mjs --release && node scripts/check-release-config.mjs && node --test tests/*.test.mjs"
+    "package:check": "node scripts/check-package-budget.mjs",
+    "release:check": "node scripts/prepare-debug-config.mjs --release && node scripts/check-release-config.mjs && node scripts/check-package-budget.mjs && node --test tests/*.test.mjs"
   }
 }

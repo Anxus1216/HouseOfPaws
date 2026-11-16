@@ -1,3 +1,4 @@
 import Main from './js/main.js';
+import { startGameWithPackages } from './js/startup.js';
 
-new Main();
+startGameWithPackages({ platform: wx, canvas: GameGlobal.canvas, startGame: () => new Main() });

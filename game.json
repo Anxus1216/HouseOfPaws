@@ -1,3 +1,7 @@
 {
-  "deviceOrientation": "portrait"
+  "deviceOrientation": "portrait",
+  "subpackages": [
+    { "name": "petSprites", "root": "assets/pets/sprites/" },
+    { "name": "gameAudio", "root": "audio/" }
+  ]
 }
