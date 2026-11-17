@@ -1,65 +1,89 @@
 {
-  "description": "项目配置文件",
-  "setting": {
-    "urlCheck": false,
-    "es6": true,
-    "postcss": true,
-    "minified": true,
-    "newFeature": true,
-    "uglifyFileName": false,
-    "uploadWithSourceMap": true,
-    "enhance": false,
-    "packNpmManually": false,
-    "packNpmRelationList": [],
-    "minifyWXSS": true,
-    "localPlugins": false,
-    "condition": false,
-    "compileWorklet": false,
-    "babelSetting": {
-      "ignore": [],
-      "disablePlugins": [],
-      "outputPath": ""
+    "description": "项目配置文件",
+    "setting": {
+        "urlCheck": false,
+        "es6": true,
+        "postcss": true,
+        "minified": true,
+        "newFeature": true,
+        "uglifyFileName": false,
+        "uploadWithSourceMap": true,
+        "enhance": false,
+        "packNpmManually": false,
+        "packNpmRelationList": [],
+        "minifyWXSS": true,
+        "localPlugins": false,
+        "condition": false,
+        "compileWorklet": false,
+        "babelSetting": {
+            "ignore": [],
+            "disablePlugins": [],
+            "outputPath": ""
+        },
+        "disableUseStrict": false,
+        "minifyWXML": true,
+        "useCompilerPlugins": false
     },
-    "disableUseStrict": false,
-    "minifyWXML": true,
-    "useCompilerPlugins": false
-  },
-  "compileType": "game",
-  "libVersion": "latest",
-  "appid": "wxe12bc1e7361d7cb5",
-  "projectname": "爪爪小屋",
-  "condition": {
-    "search": {
-      "current": -1,
-      "list": []
+    "compileType": "game",
+    "libVersion": "latest",
+    "appid": "wxa570225a181b6e42",
+    "projectname": "爪爪小屋",
+    "condition": {
+        "search": {
+            "current": -1,
+            "list": []
+        },
+        "conversation": {
+            "current": -1,
+            "list": []
+        },
+        "game": {
+            "currentL": -1,
+            "list": []
+        },
+        "miniprogram": {
+            "current": -1,
+            "list": []
+        }
     },
-    "conversation": {
-      "current": -1,
-      "list": []
+    "simulatorPluginLibVersion": {},
+    "packOptions": {
+        "ignore": [
+            {
+                "type": "folder",
+                "value": "assets/pets/concepts"
+            },
+            {
+                "type": "folder",
+                "value": "assets/pets/selected"
+            },
+            {
+                "type": "folder",
+                "value": "assets/pets/style-explorations"
+            },
+            {
+                "type": "folder",
+                "value": "docs"
+            },
+            {
+                "type": "folder",
+                "value": "scripts"
+            },
+            {
+                "type": "folder",
+                "value": "tests"
+            },
+            {
+                "type": "folder",
+                "value": "config"
+            },
+            {
+                "type": "file",
+                "value": "assets/pets/README.md"
+            }
+        ],
+        "include": []
     },
-    "game": {
-      "currentL": -1,
-      "list": []
-    },
-    "miniprogram": {
-      "current": -1,
-      "list": []
-    }
-  },
-  "simulatorPluginLibVersion": {},
-  "packOptions": {
-    "ignore": [
-      { "type": "folder", "value": "assets/pets/concepts" },
-      { "type": "folder", "value": "assets/pets/selected" },
-      { "type": "folder", "value": "assets/pets/style-explorations" },
-      { "type": "folder", "value": "docs" },
-      { "type": "folder", "value": "scripts" },
-      { "type": "folder", "value": "tests" },
-      { "type": "folder", "value": "config" },
-      { "type": "file", "value": "assets/pets/README.md" }
-    ],
-    "include": []
-  },
-  "isGameTourist": false,
-  "editorSetting": {}
+    "isGameTourist": false,
+    "editorSetting": {}
 }
