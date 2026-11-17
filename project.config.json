@@ -51,6 +51,10 @@
         "ignore": [
             {
                 "type": "folder",
+                "value": "tmp"
+            },
+            {
+                "type": "folder",
                 "value": "assets/pets/concepts"
             },
             {

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 export const MAIN_BUDGET_BYTES = 3.5 * 1024 * 1024;
 export const TOTAL_BUDGET_BYTES = 30 * 1024 * 1024;
+export const NON_RUNTIME_FOLDERS = ['tmp'];
 const UPLOAD_EXTENSIONS = new Set(('png jpg jpeg gif svg js json cer obj dae fbx mtl stl 3ds mp3 pvr wav plist ttf fnt gz ccz m4a mp4 bmp atlas swf ani part proto bin sk mipmaps txt zip tt map ogg silk dbbin dbmv etc lmat lm ls lh lani lav lsani ltc aac astc br csv cur dat dds glb gltf ico ktx lmani lml pkm prefab scene skel wasm xml').split(' '));
 const PETS = ['cat', 'rabbit', 'dog'];
 const PET_STATES = ['normal', 'happy', 'sleepy', 'need', 'feed', 'wash', 'play', 'rest'];
@@ -46,6 +47,9 @@ export function inspectPackageBudget({ root, mainBudgetBytes = MAIN_BUDGET_BYTES
   const included = (config.packOptions?.include || []).map(ruleMatcher);
   const isExcluded = path => ignored.some(match => match(path)) && !included.some(match => match(path));
   const errors = [];
+  for (const folder of NON_RUNTIME_FOLDERS) {
+    if (!isExcluded(`${folder}/__package_probe__.js`)) errors.push(`本地工具目录必须从打包排除：${folder}`);
+  }
   const packages = (game.subpackages || []).map(item => ({ name: item.name, root: relativePath(item.root), bytes: 0, files: 0 }));
   const names = new Set();
   for (const pack of packages) {
@@ -83,6 +87,7 @@ export function inspectPackageBudget({ root, mainBudgetBytes = MAIN_BUDGET_BYTES
       } else if (entry.isFile()) {
         const extension = entry.name.split('.').at(-1).toLowerCase();
         if (!UPLOAD_EXTENSIONS.has(extension) || isExcluded(path)) continue;
+        if (NON_RUNTIME_FOLDERS.some(folder => path.startsWith(`${folder}/`))) errors.push(`本地工具文件被重新纳入打包：${path}`);
         const pack = packages.find(pack => path.startsWith(`${pack.root}/`)) || main;
         pack.bytes += lstatSync(join(projectRoot, path)).size;
         pack.files++;

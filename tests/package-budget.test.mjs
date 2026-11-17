@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { inspectPackageBudget, REQUIRED_PACKAGES } from '../scripts/check-package-budget.mjs';
+import { inspectPackageBudget, REQUIRED_PACKAGES, NON_RUNTIME_FOLDERS } from '../scripts/check-package-budget.mjs';
 
 function fixture(t, config = {}) {
   const root = mkdtempSync(join(tmpdir(), 'paw-package-budget-'));
@@ -13,7 +13,9 @@ function fixture(t, config = {}) {
     mkdirSync(join(root, path, '..'), { recursive: true });
     writeFileSync(join(root, path), value);
   };
-  put('project.config.json', JSON.stringify(config));
+  const project = { ...config, packOptions: { ...config.packOptions,
+    ignore: [...NON_RUNTIME_FOLDERS.map(value => ({ type: 'folder', value })), ...(config.packOptions?.ignore || [])] } };
+  put('project.config.json', JSON.stringify(project));
   put('game.json', JSON.stringify({ subpackages: REQUIRED_PACKAGES.map(({ name, root }) => ({ name, root: `${root}/` })) }));
   put('game.js', 'startup();');
   for (const pack of REQUIRED_PACKAGES) {
@@ -63,6 +65,27 @@ test('main and total raw budgets fail independently', t => {
   const report = f.report({ mainBudgetBytes: 1, totalBudgetBytes: 1 });
   assert.match(report.errors.join('\n'), /主包原始预算超限/);
   assert.match(report.errors.join('\n'), /总包原始预算超限/);
+});
+
+test('temporary project copies never enter any package', t => {
+  const f = fixture(t);
+  const before = f.report();
+  f.put('tmp/project-copy/assets/pets/selected/draft.png', Buffer.alloc(5 * 1024 * 1024));
+  f.put('tmp/project-copy/audio/bgm/test.mp3', Buffer.alloc(100));
+  const after = f.report();
+  assert.deepEqual(after, before);
+});
+
+test('missing tool-folder exclusions and includes that restore a tool file block release', t => {
+  const f = fixture(t);
+  f.put('project.config.json', '{}');
+  assert.match(f.report().errors.join('\n'), /必须从打包排除：tmp/);
+  f.put('project.config.json', JSON.stringify({ packOptions: {
+    ignore: NON_RUNTIME_FOLDERS.map(value => ({ type: 'folder', value })),
+    include: [{ type: 'file', value: 'tmp/project-copy/game.js' }],
+  } }));
+  f.put('tmp/project-copy/game.js', 'new Main();');
+  assert.match(f.report().errors.join('\n'), /本地工具文件被重新纳入打包：tmp\/project-copy\/game.js/);
 });
 
 test('unsupported rules and escaped package roots are explicit failures', t => {
